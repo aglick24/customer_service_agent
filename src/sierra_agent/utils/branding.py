@@ -5,14 +5,15 @@ This module contains Sierra Outfitters branding guidelines, company information,
 and messaging templates for consistent customer interactions.
 """
 
+
 class Branding:
     """Sierra Outfitters branding and company information."""
-    
+
     # Company Information
     COMPANY_NAME = "Sierra Outfitters"
     COMPANY_INTRO = "Sierra Outfitters - Your Premier Outdoor Gear Destination"
     COMPANY_TAGLINE = "Adventure Awaits - Gear Up with Sierra Outfitters"
-    
+
     # Brand Voice Guidelines
     BRAND_GUIDANCE = """
     Sierra Outfitters Brand Voice:
@@ -23,7 +24,7 @@ class Branding:
     - Emphasize quality, durability, and performance
     - Connect with outdoor enthusiasts and nature lovers
     """
-    
+
     # Product Categories
     PRODUCT_CATEGORIES = [
         "Hiking & Backpacking",
@@ -33,34 +34,34 @@ class Branding:
         "Winter Sports & Snow Gear",
         "Outdoor Clothing & Footwear",
         "Electronics & Navigation",
-        "Safety & Survival Gear"
+        "Safety & Survival Gear",
     ]
-    
+
     # Company Values
     COMPANY_VALUES = [
         "Quality and Durability",
         "Customer Satisfaction",
         "Outdoor Expertise",
         "Environmental Responsibility",
-        "Adventure and Exploration"
+        "Adventure and Exploration",
     ]
-    
+
     # Contact Information
     CONTACT_INFO = {
         "phone": "1-800-SIERRA-1",
         "email": "customerservice@sierraoutfitters.com",
         "website": "www.sierraoutfitters.com",
-        "hours": "Mon-Fri: 8AM-8PM, Sat-Sun: 9AM-6PM (Mountain Time)"
+        "hours": "Mon-Fri: 8AM-8PM, Sat-Sun: 9AM-6PM (Mountain Time)",
     }
-    
+
     # Social Media
     SOCIAL_MEDIA = {
         "instagram": "@sierraoutfitters",
         "facebook": "SierraOutfitters",
         "twitter": "@SierraOutfit",
-        "youtube": "SierraOutfittersTV"
+        "youtube": "SierraOutfittersTV",
     }
-    
+
     # Return Policy
     RETURN_POLICY = """
     Sierra Outfitters Return Policy:
@@ -69,7 +70,7 @@ class Branding:
     - Must be in original condition with tags
     - Some restrictions apply to safety equipment
     """
-    
+
     # Shipping Information
     SHIPPING_INFO = """
     Sierra Outfitters Shipping:
@@ -78,17 +79,17 @@ class Branding:
     - Express shipping available (1-2 business days)
     - International shipping to select countries
     """
-    
+
     @classmethod
     def get_welcome_message(cls) -> str:
         """Get a standard welcome message."""
         return f"Welcome to {cls.COMPANY_NAME}! {cls.COMPANY_TAGLINE}"
-    
+
     @classmethod
     def get_closing_message(cls) -> str:
         """Get a standard closing message."""
         return f"Thank you for choosing {cls.COMPANY_NAME}. Adventure awaits!"
-    
+
     @classmethod
     def get_company_description(cls) -> str:
         """Get a comprehensive company description."""

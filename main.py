@@ -3,7 +3,7 @@
 Sierra Agent - Main Entry Point
 
 AI-powered customer service agent for Sierra Outfitters with real-time
-quality monitoring and comprehensive analytics.
+quality monitoring, comprehensive analytics, and intelligent planning.
 """
 
 import sys
@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 def print_banner():
     """Display the Sierra Outfitters welcome banner."""
     print("🏔️" * 50)
-    print("🏔️  SIERRA OUTFITTERS CUSTOMER SERVICE AGENT  🏔️")
+    print("🏔️  SIERRA OUTFITTERS PLANNING AGENT  🏔️")
     print("🏔️" * 50)
     print("Your AI-powered outdoor gear customer service companion!")
+    print("Now with intelligent planning and strategic execution!")
     print("Type 'help' for available commands, 'quit' to exit.")
     print("=" * 50)
 
@@ -41,6 +42,7 @@ def print_help():
     print("  stats    - Display conversation statistics")
     print("  summary  - Show conversation summary")
     print("  reset    - Reset current conversation")
+    print("  planning - Show planning system status")
     print("  quit     - Exit the application")
     print("\n💬 Just type naturally to chat with the AI agent!")
     print("   Examples:")
@@ -48,6 +50,10 @@ def print_help():
     print("   - 'Track my order #12345'")
     print("   - 'What's on sale today?'")
     print("   - 'Tell me about your return policy'")
+    print("\n🧠 Planning Mode:")
+    print("   - Complex requests automatically use planning")
+    print("   - Simple requests use fast reactive mode")
+    print("   - Type 'planning' to see current strategy")
 
 
 def print_conversation_summary(agent: SierraAgent):
@@ -70,6 +76,32 @@ def print_conversation_summary(agent: SierraAgent):
         print(f"Urgency: {summary['conversation_patterns']['urgency_level']}")
 
 
+def print_planning_status(agent: SierraAgent):
+    """Display the current planning system status."""
+    print("\n🧠 Planning System Status:")
+    print("=" * 30)
+    
+    stats = agent.get_agent_statistics()
+    
+    # Planning configuration
+    config = stats.get('configuration', {})
+    print(f"Planning Enabled: {'✅ Yes' if config.get('enable_planning') else '❌ No'}")
+    print(f"Planning Threshold: {config.get('planning_threshold', 'N/A')} characters")
+    
+    # Planning statistics
+    planning_stats = stats.get('planning_stats', {})
+    print(f"Planning Strategies: {planning_stats.get('strategies', 'N/A')}")
+    print(f"Plan Templates: {planning_stats.get('templates', 'N/A')}")
+    
+    # Execution statistics
+    execution_stats = stats.get('execution_stats', {})
+    print(f"Total Plans Executed: {execution_stats.get('total_executions', 'N/A')}")
+    print(f"Success Rate: {execution_stats.get('success_rate', 'N/A'):.1%}")
+    
+    # Business rules
+    print(f"Business Rules: {stats.get('business_rules_count', 'N/A')}")
+
+
 def main():
     """Main application entry point."""
     print_banner()
@@ -83,16 +115,16 @@ def main():
     
     # Initialize the AI agent
     try:
-        print("\n🔧 Initializing AI Agent...")
+        print("\n🔧 Initializing Planning-Based AI Agent...")
         agent = SierraAgent()
-        print("✅ AI Agent initialized successfully!")
+        print("✅ Planning-Based AI Agent initialized successfully!")
     except Exception as e:
-        print(f"❌ Failed to initialize AI Agent: {e}")
+        print(f"❌ Failed to initialize Planning-Based AI Agent: {e}")
         logger.error(f"Agent initialization failed: {e}")
         sys.exit(1)
     
     # Start conversation
-    print("\n🚀 Starting new conversation session...")
+    print("\n🚀 Starting new planning conversation session...")
     session_id = agent.start_conversation()
     print(f"✅ Session started: {session_id}")
     
@@ -104,17 +136,22 @@ def main():
             
             # Handle special commands
             if user_input.lower() == 'quit':
-                print("\n👋 Thank you for using Sierra Outfitters Customer Service!")
+                print("\n👋 Thank you for using Sierra Outfitters Planning Agent!")
                 break
             elif user_input.lower() == 'help':
                 print_help()
                 continue
             elif user_input.lower() == 'stats':
                 print("\n📊 Conversation Statistics:")
-                agent.analytics.display_summary()
+                stats = agent.get_agent_statistics()
+                print(f"LLM Status: {stats['llm_status']}")
+                print(f"Conversation: {stats['conversation_summary']}")
                 continue
             elif user_input.lower() == 'summary':
                 print_conversation_summary(agent)
+                continue
+            elif user_input.lower() == 'planning':
+                print_planning_status(agent)
                 continue
             elif user_input.lower() == 'reset':
                 print("\n🔄 Resetting conversation...")
@@ -127,12 +164,12 @@ def main():
                 continue
             
             # Process user input through the AI agent
-            print("\n🤖 Sierra Agent: ", end="", flush=True)
+            print("\n🤖 Sierra Planning Agent: ", end="", flush=True)
             response = agent.process_user_input(user_input)
             print(response)
             
         except KeyboardInterrupt:
-            print("\n\n👋 Goodbye! Thanks for using Sierra Outfitters!")
+            print("\n\n👋 Goodbye! Thanks for using Sierra Outfitters Planning Agent!")
             break
         except Exception as e:
             print(f"\n❌ An error occurred: {e}")
@@ -147,9 +184,13 @@ def main():
         # Display final conversation summary
         print_conversation_summary(agent)
         
-        # Display analytics summary
-        print("\n📊 Final Analytics Summary:")
-        agent.analytics.display_summary()
+        # Display planning status
+        print_planning_status(agent)
+        
+        # Display final statistics
+        print("\n📊 Final Statistics:")
+        stats = agent.get_agent_statistics()
+        print(f"Conversation completed successfully!")
         
     except Exception as e:
         print(f"⚠️  Warning: Could not finalize analytics: {e}")

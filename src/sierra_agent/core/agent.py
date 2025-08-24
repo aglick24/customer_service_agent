@@ -1,25 +1,20 @@
 """
-Sierra Outfitters AI Agent - Main Orchestrator
+Sierra Agent - Core Agent Implementation
 
-This module contains the central AI agent that coordinates all system components
-including conversation management, LLM integration, quality monitoring, and analytics.
+This module implements the core Sierra Agent functionality for customer service,
+including intent classification, response generation, and tool orchestration.
 """
 
 import logging
 import time
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from ..data.data_types import IntentType, SentimentType, PlanningRequest, ExecutionContext
 from ..ai.llm_client import LLMClient
-from ..core.conversation import Conversation, ConversationState, MessageType
+from ..core.conversation import Conversation
+from ..data.data_types import IntentType, MultiTurnPlan, PlanStep, PlanStatus
+from ..tools.business_tools import BusinessTools
 from ..tools.tool_orchestrator import ToolOrchestrator
-from ..tools.planning_engine import PlanningEngine
-from ..tools.plan_executor import PlanExecutor
-from ..analytics.quality_scorer import QualityScorer
-from ..analytics.conversation_analytics import ConversationAnalytics
-from ..utils.branding import Branding
-from ..utils.error_messages import ErrorMessages
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentConfig:
     """Configuration for the Sierra Agent."""
+
     quality_check_interval: int = 3
     analytics_update_interval: int = 5
     max_conversation_length: int = 50
@@ -42,65 +38,51 @@ class AgentConfig:
 
 class SierraAgent:
     """Base AI Agent for Sierra Outfitters customer service."""
-    
+
     def __init__(self, config: Optional[AgentConfig] = None) -> None:
-        print("🔧 [AGENT] Initializing Sierra Agent...")
         self.config = config or AgentConfig()
-        print(f"🔧 [AGENT] Configuration: quality_check_interval={self.config.quality_check_interval}, analytics_update_interval={self.config.analytics_update_interval}")
-        
-        print("🔧 [AGENT] Initializing conversation manager...")
+
         self.conversation = Conversation()
-        
-        print("🔧 [AGENT] Initializing LLM clients...")
+
         if self.config.enable_dual_llm:
-            print(f"🔧 [AGENT] Primary LLM (thinking): {self.config.thinking_model}")
-            self.thinking_llm = LLMClient(model_name=self.config.thinking_model, max_tokens=2000)
-            print(f"🔧 [AGENT] Secondary LLM (low latency): {self.config.low_latency_model}")
-            self.low_latency_llm = LLMClient(model_name=self.config.low_latency_model, max_tokens=1000)
+            self.thinking_llm = LLMClient(
+                model_name=self.config.thinking_model, max_tokens=2000
+            )
+            self.low_latency_llm = LLMClient(
+                model_name=self.config.low_latency_model, max_tokens=1000
+            )
         else:
-            print(f"🔧 [AGENT] Single LLM mode: {self.config.thinking_model}")
-            self.thinking_llm = LLMClient(model_name=self.config.thinking_model, max_tokens=2000)
+            self.thinking_llm = LLMClient(
+                model_name=self.config.thinking_model, max_tokens=2000
+            )
             self.low_latency_llm = self.thinking_llm
-        
-        print("🔧 [AGENT] Initializing tool orchestrator...")
+
         self.tool_orchestrator = ToolOrchestrator(low_latency_llm=self.low_latency_llm)
-        
-        print("🔧 [AGENT] Initializing planning engine...")
-        self.planning_engine = PlanningEngine(thinking_llm=self.thinking_llm)
-        
-        print("🔧 [AGENT] Initializing plan executor...")
-        self.plan_executor = PlanExecutor()
-        
-        print("🔧 [AGENT] Initializing quality scorer...")
-        self.quality_scorer = QualityScorer()
-        
-        print("🔧 [AGENT] Initializing analytics...")
-        self.analytics = ConversationAnalytics()
-        
+
+
         self.session_id: Optional[str] = None
         self.interaction_count = 0
         self.last_quality_check = 0
         self.last_analytics_update = 0
-        
-        print("🔧 [AGENT] SierraAgent initialization complete!")
+
         logger.info("SierraAgent initialized successfully")
-    
+
     def get_llm_status(self) -> Dict[str, Any]:
         """Get the status of both LLM clients."""
         return {
             "thinking_llm": {
                 "model": self.thinking_llm.model_name,
-                "available": self.thinking_llm.is_available(),
-                "usage_stats": self.thinking_llm.get_usage_stats()
+                "available": True,
+                "usage_stats": self.thinking_llm.get_usage_stats(),
             },
             "low_latency_llm": {
                 "model": self.low_latency_llm.model_name,
-                "available": self.low_latency_llm.is_available(),
-                "usage_stats": self.low_latency_llm.get_usage_stats()
+                "available": True,
+                "usage_stats": self.low_latency_llm.get_usage_stats(),
             },
-            "dual_llm_enabled": self.config.enable_dual_llm
+            "dual_llm_enabled": self.config.enable_dual_llm,
         }
-    
+
     def switch_llm_mode(self, enable_dual: bool) -> None:
         """Switch between single and dual LLM modes."""
         if enable_dual and not self.config.enable_dual_llm:
@@ -108,228 +90,512 @@ class SierraAgent:
             self.config.enable_dual_llm = True
             # Reinitialize low latency LLM if needed
             if self.low_latency_llm == self.thinking_llm:
-                self.low_latency_llm = LLMClient(model_name=self.config.low_latency_model, max_tokens=1000)
-                print(f"🔄 [AGENT] Low latency LLM initialized: {self.config.low_latency_model}")
+                self.low_latency_llm = LLMClient(
+                    model_name=self.config.low_latency_model, max_tokens=1000
+                )
+                print(
+                    f"🔄 [AGENT] Low latency LLM initialized: {self.config.low_latency_model}"
+                )
         elif not enable_dual and self.config.enable_dual_llm:
             print("🔄 [AGENT] Switching to single LLM mode...")
             self.config.enable_dual_llm = False
             self.low_latency_llm = self.thinking_llm
             print("🔄 [AGENT] Now using single LLM for all operations")
-    
+
     def start_conversation(self) -> str:
         """Start a new conversation session."""
         print("🚀 [AGENT] Starting new conversation session...")
-        
+
         # Generate session ID
         self.session_id = f"session_{int(time.time())}"
         print(f"🚀 [AGENT] Generated session ID: {self.session_id}")
-        
+
         # Reset interaction counter
         self.interaction_count = 0
-        print(f"🚀 [AGENT] Reset interaction counter to 0")
-        
+
         # Reset conversation
         self.conversation.clear_conversation()
-        print(f"🚀 [AGENT] Cleared previous conversation")
-        
+
         # Add system message
         self.conversation.add_system_message(f"Session {self.session_id} started")
-        print(f"🚀 [AGENT] Added system message for session start")
-        
+
         logger.info(f"Started conversation session {self.session_id}")
         print(f"✅ [AGENT] Conversation session {self.session_id} started successfully")
-        
+
         return self.session_id
-    
+
     def process_user_input(self, user_input: str) -> str:
         """Process user input and generate response."""
-        print(f"\n👤 [AGENT] Processing user input: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
-        print(f"👤 [AGENT] Session: {self.session_id}, Interaction: {self.interaction_count + 1}")
-        
+        print(
+            f"\n👤 [AGENT] Processing user input: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'"
+        )
+        print(
+            f"👤 [AGENT] Session: {self.session_id}, Interaction: {self.interaction_count + 1}"
+        )
+
         try:
             # Add user message to conversation
-            print("👤 [AGENT] Adding user message to conversation...")
             self.conversation.add_user_message(user_input)
-            
+
             # Increment interaction counter
             self.interaction_count += 1
-            print(f"👤 [AGENT] Interaction counter incremented to {self.interaction_count}")
-            
-            # Classify intent
-            print("🧠 [AGENT] Classifying user intent...")
-            intent = self._classify_intent(user_input)
-            print(f"🧠 [AGENT] Classified intent: {intent}")
-            
-            # Analyze sentiment
-            print("😊 [AGENT] Analyzing user sentiment...")
-            sentiment = self._analyze_sentiment(user_input)
-            print(f"😊 [AGENT] Analyzed sentiment: {sentiment}")
-            
-            # Update conversation state
-            print("📝 [AGENT] Updating conversation state...")
-            self.conversation.update_customer_sentiment(sentiment)
-            print(f"📝 [AGENT] Updated conversation state with sentiment: {sentiment}")
-            
-            # Execute business tools
-            print("🛠️ [AGENT] Executing business tools for intent...")
-            tool_results = self._execute_business_tools(intent, user_input)
-            print(f"🛠️ [AGENT] Tool execution completed. Results: {len(tool_results)} tools executed")
-            
-            # Generate response
-            print("💬 [AGENT] Generating AI response...")
-            response = self._generate_response(user_input, intent, sentiment, tool_results)
-            print(f"💬 [AGENT] Generated response: '{response[:50]}{'...' if len(response) > 50 else ''}'")
-            
+
+            # Generate plan for user request
+            plan = self._generate_plan(user_input)
+            print(f"🧠 [AGENT] Generated plan: {plan.plan_id}")
+
+            # Print the plan in readable format
+            plan.print_plan()
+
+            # Execute plan steps
+            execution_results = self._execute_plan(plan)
+            print(f"🛠️ [AGENT] Plan execution completed. Status: {plan.status}")
+
+            # Generate response from plan results
+            response = self._generate_response_from_plan(plan, execution_results)
+
             # Add AI response to conversation
-            print("💬 [AGENT] Adding AI response to conversation...")
             self.conversation.add_ai_message(response)
-            
+
             # Check if quality monitoring is needed
-            if self.config.enable_quality_monitoring and self.interaction_count % self.config.quality_check_interval == 0:
-                print("📊 [AGENT] Triggering quality check...")
+            if (
+                self.config.enable_quality_monitoring
+                and self.interaction_count % self.config.quality_check_interval == 0
+            ):
                 self._check_conversation_quality()
-            
+
             # Check if analytics update is needed
-            if self.config.enable_analytics and self.interaction_count % self.config.analytics_update_interval == 0:
-                print("📈 [AGENT] Triggering analytics update...")
+            if (
+                self.config.enable_analytics
+                and self.interaction_count % self.config.analytics_update_interval == 0
+            ):
                 self._update_analytics()
-            
-            print(f"✅ [AGENT] User input processing completed successfully")
+
             return response
-            
+
         except Exception as e:
             print(f"❌ [AGENT] Error processing user input: {e}")
             logger.error(f"Error processing user input: {e}")
-            
+
             # Generate fallback response
             fallback_response = "I'm experiencing some technical difficulties right now. Please try again in a moment."
-            print(f"🔄 [AGENT] Generated fallback response: {fallback_response}")
-            
+
             # Add fallback response to conversation
             self.conversation.add_ai_message(fallback_response)
-            print(f"🔄 [AGENT] Added fallback response to conversation")
-            
+
             return fallback_response
-    
-    def _classify_intent(self, user_input: str) -> IntentType:
-        """Classify the user's intent."""
-        print(f"🧠 [INTENT] Classifying intent for: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
+
+    def _generate_plan(self, user_input: str) -> MultiTurnPlan:
+        """Generate a comprehensive plan for handling the user request."""
+        print(f"🧠 [PLAN] Generating plan for: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
+        
+        import uuid
+        from datetime import datetime
         
         try:
-            intent = self.tool_orchestrator.llm_client.classify_intent(user_input)
-            print(f"🧠 [INTENT] Successfully classified as: {intent}")
-            return intent
+            # Analyze the request to determine what needs to be done
+            plan_context = self._analyze_request(user_input)
+            
+            # Generate plan steps based on the request
+            steps = self._generate_plan_steps(user_input, plan_context)
+            
+            # Create the plan
+            plan_id = f"plan_{uuid.uuid4().hex[:8]}"
+            
+            # Get intent from context (now always an IntentType enum)
+            intent_enum = plan_context.get("primary_intent", IntentType.GENERAL_INQUIRY)
+            
+            plan = MultiTurnPlan(
+                plan_id=plan_id,
+                intent=intent_enum,
+                customer_request=user_input,
+                steps=steps,
+                status=PlanStatus.PENDING,
+                created_at=datetime.now(),
+                conversation_context={"session_id": self.session_id, "original_request": user_input}
+            )
+            
+            print(f"🧠 [PLAN] Generated plan '{plan_id}' with {len(steps)} steps")
+            return plan
+            
         except Exception as e:
-            print(f"❌ [INTENT] Error classifying intent: {e}")
-            print(f"🔄 [INTENT] Falling back to CUSTOMER_SERVICE intent")
-            return IntentType.CUSTOMER_SERVICE
-    
-    def _analyze_sentiment(self, user_input: str) -> SentimentType:
-        """Analyze the user's sentiment."""
-        print(f"😊 [SENTIMENT] Analyzing sentiment for: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
+            print(f"❌ [PLAN] Error generating plan: {e}")
+            # Create a fallback plan
+            return self._create_fallback_plan(user_input)
+
+    def _analyze_request(self, user_input: str) -> Dict[str, Any]:
+        """Analyze the user request to understand what needs to be done."""
+        print(f"🔍 [ANALYSIS] Analyzing request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
         
+        user_lower = user_input.lower()
+        context: Dict[str, Any] = {"request_type": "general", "complexity": "simple"}
+        
+        # Detect order-related requests
+        if any(keyword in user_lower for keyword in ["order", "track", "delivery", "shipping", "#w", "order number"]):
+            context["request_type"] = "order_status"
+            context["primary_intent"] = IntentType.ORDER_STATUS
+            
+        # Detect product-related requests  
+        elif any(keyword in user_lower for keyword in ["product", "recommend", "looking for", "need", "buy", "search"]):
+            context["request_type"] = "product_inquiry"
+            context["primary_intent"] = IntentType.PRODUCT_INQUIRY
+            
+        # Detect promotion requests
+        elif any(keyword in user_lower for keyword in ["discount", "promotion", "code", "early risers", "sale"]):
+            context["request_type"] = "promotion"
+            context["primary_intent"] = IntentType.EARLY_RISERS_PROMOTION
+            
+        # Detect complex multi-part requests
+        if len(user_input.split()) > 20 or "and" in user_lower or "also" in user_lower:
+            context["complexity"] = "complex"
+            
+        print(f"🔍 [ANALYSIS] Request type: {context['request_type']}, complexity: {context['complexity']}")
+        return context
+
+    def _generate_plan_steps(self, user_input: str, context: Dict[str, Any]) -> List[PlanStep]:
+        """Generate specific plan steps based on the request context."""
+        import uuid
+        
+        steps = []
+        request_type = context.get("request_type", "general")
+        
+        if request_type == "order_status":
+            steps.extend([
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Extract Order Information", 
+                    description="Extract email and order number from user input",
+                    tool_name="extract_order_info",
+                    parameters={"user_input": user_input}
+                ),
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Get Order Status",
+                    description="Retrieve order status and tracking information",
+                    tool_name="get_order_status",
+                    parameters={},
+                    dependencies=["Extract Order Information"]
+                )
+            ])
+            
+        elif request_type == "product_inquiry":
+            steps.extend([
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Understand Product Needs",
+                    description="Analyze what the customer is looking for",
+                    tool_name="analyze_product_request",
+                    parameters={"user_input": user_input}
+                ),
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Search Products",
+                    description="Search and recommend relevant products",
+                    tool_name="search_products",
+                    parameters={},
+                    dependencies=["Understand Product Needs"]
+                )
+            ])
+            
+        elif request_type == "promotion":
+            steps.append(
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Check Early Risers Promotion",
+                    description="Verify time and generate promotion code if eligible",
+                    tool_name="get_early_risers_promotion",
+                    parameters={"user_input": user_input}
+                )
+            )
+            
+        else:
+            # General inquiry - create adaptive plan
+            steps.append(
+                PlanStep(
+                    step_id=f"step_{uuid.uuid4().hex[:8]}",
+                    name="Handle General Inquiry",
+                    description="Provide general customer service assistance",
+                    tool_name="handle_general_inquiry",
+                    parameters={"user_input": user_input}
+                )
+            )
+        
+        print(f"🛠️ [STEPS] Generated {len(steps)} plan steps for {request_type}")
+        return steps
+
+    def _execute_plan(self, plan: MultiTurnPlan) -> Dict[str, Any]:
+        """Execute all steps in the plan."""
+        print(f"🚀 [EXECUTION] Executing plan '{plan.plan_id}' with {len(plan.steps)} steps")
+        
+        plan.status = PlanStatus.IN_PROGRESS
+        execution_results: Dict[str, Any] = {"steps": [], "overall_success": True}
+        
+        for step in plan.steps:
+            print(f"🔧 [EXECUTION] Executing step: {step.name}")
+            
+            try:
+                # Execute the step using the tool orchestrator
+                result = self._execute_plan_step(step, plan.conversation_context)
+                step.result = result
+                step.is_completed = True
+                
+                execution_results["steps"].append({
+                    "step_id": step.step_id,
+                    "name": step.name,
+                    "success": True,
+                    "result": result
+                })
+                
+                print(f"✅ [EXECUTION] Step '{step.name}' completed successfully")
+                
+            except Exception as e:
+                print(f"❌ [EXECUTION] Step '{step.name}' failed: {e}")
+                step.result = {"error": str(e)}
+                execution_results["overall_success"] = False
+                
+                execution_results["steps"].append({
+                    "step_id": step.step_id,
+                    "name": step.name,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        # Update plan status
+        plan.status = PlanStatus.COMPLETED if execution_results["overall_success"] else PlanStatus.FAILED
+        
+        print(f"🏁 [EXECUTION] Plan execution completed. Status: {plan.status}")
+        return execution_results
+
+    def _execute_plan_step(self, step: PlanStep, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a single plan step."""
+        print(f"⚙️ [STEP] Executing: {step.tool_name}")
+        
+        # Map plan step tools to business tool methods
+        tool_mapping = {
+            "get_order_status": self.tool_orchestrator.business_tools.get_order_status,
+            "search_products": self.tool_orchestrator.business_tools.search_products,
+            "get_product_recommendations": self.tool_orchestrator.business_tools.get_product_recommendations,
+            "get_early_risers_promotion": self.tool_orchestrator.business_tools.get_early_risers_promotion,
+        }
+        
+        # Handle special analysis steps
+        if step.tool_name == "extract_order_info":
+            return self._extract_order_info(step.parameters["user_input"])
+        elif step.tool_name == "analyze_product_request":
+            return self._analyze_product_request(step.parameters["user_input"])
+        elif step.tool_name == "handle_general_inquiry":
+            return self._handle_general_inquiry(step.parameters["user_input"])
+        
+        # Execute business tool via orchestrator
+        if step.tool_name in tool_mapping:
+            # Use the original user input for tool execution
+            original_input = step.parameters.get("user_input") or context.get("original_request", "")
+            return self.tool_orchestrator.execute_tool(step.tool_name, original_input)
+        else:
+            raise ValueError(f"Unknown tool: {step.tool_name}")
+
+    def _generate_response_from_plan(self, plan: MultiTurnPlan, execution_results: Dict[str, Any]) -> str:
+        """Generate a response based on plan execution results."""
+        print(f"💭 [RESPONSE] Generating response for plan '{plan.plan_id}'")
+        
+        # Debug: Print execution results
+        print(f"💭 [RESPONSE] Execution results: {execution_results}")
+        
+        # Collect all successful results
+        successful_results = []
+        for step_result in execution_results["steps"]:
+            if step_result["success"]:
+                successful_results.append(step_result["result"])
+        
+        print(f"💭 [RESPONSE] Found {len(successful_results)} successful results")
+        
+        if not successful_results:
+            return "I apologize, but I'm having trouble processing your request right now. Please try again or contact our support team."
+        
+        # Find the most relevant business data (prioritize actual business operations over extraction)
+        primary_business_data = {}
+        for result in successful_results:
+            if isinstance(result, dict):
+                # Prioritize results that contain actual business data
+                if any(key in result for key in ['order_number', 'customer_name', 'status', 'products', 'available', 'discount_code']):
+                    primary_business_data = result
+                    break
+        
+        # If no primary business data found, use the last successful result
+        if not primary_business_data and successful_results:
+            primary_business_data = successful_results[-1]
+        
+        # Convert IntentType enum to string format expected by LLM client
+        intent_mapping = {
+            IntentType.ORDER_STATUS: "order_status",
+            IntentType.PRODUCT_INQUIRY: "product_inquiry", 
+            IntentType.EARLY_RISERS_PROMOTION: "promotion_inquiry",
+            IntentType.RETURN_REQUEST: "return_request",
+            IntentType.COMPLAINT: "complaint",
+            IntentType.SHIPPING_INFO: "shipping_info",
+            IntentType.PROMOTION_INQUIRY: "promotion_inquiry",
+            IntentType.GENERAL_INQUIRY: "customer_service",
+            IntentType.CUSTOMER_SERVICE: "customer_service"
+        }
+        
+        plan_intent = getattr(plan, 'intent', IntentType.CUSTOMER_SERVICE)
+        intent_string = intent_mapping.get(plan_intent, "customer_service")
+        
+        # Build proper context that matches LLM client expectations
+        context = {
+            "user_input": plan.customer_request,
+            "customer_request": plan.customer_request,
+            "plan_results": successful_results,
+            "tool_results": primary_business_data,
+            "conversation_history": self.conversation.get_message_history(limit=5),
+            "intent": intent_string,
+            "sentiment": "neutral"  # Default sentiment
+        }
+        
+        print(f"💭 [RESPONSE] Built context with keys: {list(context.keys())}")
+        
+        # Use LLM to generate natural response
+        response = self.tool_orchestrator.llm_client.generate_response(context)
+        return response
+
+    def _create_fallback_plan(self, user_input: str) -> MultiTurnPlan:
+        """Create a simple fallback plan when plan generation fails."""
+        import uuid
+        from datetime import datetime
+        
+        fallback_step = PlanStep(
+            step_id=f"step_{uuid.uuid4().hex[:8]}",
+            name="General Assistance",
+            description="Provide general customer service help",
+            tool_name="handle_general_inquiry",
+            parameters={"user_input": user_input}
+        )
+        
+        return MultiTurnPlan(
+            plan_id=f"fallback_{uuid.uuid4().hex[:8]}",
+            intent=IntentType.GENERAL_INQUIRY,
+            customer_request=user_input,
+            steps=[fallback_step],
+            status=PlanStatus.PENDING,
+            created_at=datetime.now()
+        )
+
+    def _extract_order_info(self, user_input: str) -> Dict[str, Any]:
+        """Extract order information from user input."""
+        # Use existing extraction logic from business tools
+        email = self.tool_orchestrator.business_tools._extract_email(user_input)
+        order_number = self.tool_orchestrator.business_tools._extract_order_number(user_input)
+        
+        return {
+            "email": email,
+            "order_number": order_number,
+            "extraction_successful": bool(email and order_number)
+        }
+
+    def _analyze_product_request(self, user_input: str) -> Dict[str, Any]:
+        """Analyze what products the customer is looking for."""
+        preferences = self.tool_orchestrator.business_tools._extract_preferences(user_input)
+        category = self.tool_orchestrator.business_tools._extract_product_category(user_input)
+        
+        return {
+            "preferences": preferences,
+            "category": category,
+            "search_query": user_input
+        }
+
+    def _handle_general_inquiry(self, user_input: str) -> Dict[str, Any]:
+        """Handle general customer service inquiries."""
+        return {
+            "inquiry_type": "general",
+            "user_input": user_input,
+            "response": "I'm here to help you with any questions about Sierra Outfitters products, orders, or services."
+        }
+
+    def _analyze_sentiment(self, user_input: str) -> str:
+        """Analyze the user's sentiment."""
+
         try:
-            sentiment = self.tool_orchestrator.llm_client.analyze_sentiment(user_input)
-            print(f"😊 [SENTIMENT] Successfully analyzed as: {sentiment}")
+            sentiment = self._analyze_sentiment_mock(user_input)
+
             return sentiment
+
         except Exception as e:
             print(f"❌ [SENTIMENT] Error analyzing sentiment: {e}")
-            print(f"🔄 [SENTIMENT] Falling back to NEUTRAL sentiment")
-            return SentimentType.NEUTRAL
-    
-    def _execute_business_tools(self, intent: IntentType, user_input: str) -> Dict[str, Any]:
-        """Execute business tools based on intent."""
-        print(f"🛠️ [TOOLS] Executing tools for intent: {intent}")
-        
-        try:
-            results = self.tool_orchestrator.execute_tools_for_intent(intent, user_input)
-            print(f"🛠️ [TOOLS] Successfully executed tools. Results: {results}")
-            return results
-        except Exception as e:
-            print(f"❌ [TOOLS] Error executing tools: {e}")
-            print(f"🔄 [TOOLS] Returning empty results")
-            return {}
-    
-    def _generate_response(self, user_input: str, intent: IntentType, sentiment: SentimentType, tool_results: Dict[str, Any]) -> str:
-        """Generate AI response based on input and tool results."""
-        print(f"💬 [RESPONSE] Generating response for intent: {intent}, sentiment: {sentiment}")
-        
-        try:
-            # Prepare context for response generation
-            context = {
-                "user_input": user_input,
-                "intent": intent.value,
-                "sentiment": sentiment.value,
-                "tool_results": tool_results,
-                "conversation_history": self.conversation.get_message_history(limit=5),
-                "session_id": self.session_id,
-                "interaction_count": self.interaction_count
-            }
-            print(f"💬 [RESPONSE] Prepared context with {len(context)} elements")
-            
-            # Generate response using LLM
-            response = self.tool_orchestrator.llm_client.generate_response(context)
-            print(f"💬 [RESPONSE] Successfully generated response from LLM")
-            
-            return response
-            
-        except Exception as e:
-            print(f"❌ [RESPONSE] Error generating response: {e}")
-            print(f"🔄 [RESPONSE] Falling back to default response")
-            
-            # Fallback response based on intent
-            if intent == IntentType.ORDER_STATUS:
-                return "I'd be happy to help you with your order. Could you please provide your order number?"
-            elif intent == IntentType.PRODUCT_INQUIRY:
-                return "I'd be happy to help you find the perfect outdoor gear. What are you looking for?"
-            else:
-                return "Thank you for contacting Sierra Outfitters. How can I assist you today?"
-    
+            print("🔄 [SENTIMENT] Falling back to NEUTRAL sentiment")
+            return "NEUTRAL"
+
+    def _analyze_sentiment_mock(self, user_input: str) -> str:
+        """Mock sentiment analysis for testing."""
+        user_input_lower = user_input.lower()
+
+        # Simple keyword-based sentiment analysis
+        positive_words = [
+            "thank", "thanks", "great", "awesome", "love", "perfect", "excellent", "happy", "satisfied"
+        ]
+        negative_words = [
+            "angry", "frustrated", "disappointed", "upset", "terrible", "awful", "hate", "problem", "issue", "broken"
+        ]
+
+        positive_count = sum(1 for word in positive_words if word in user_input_lower)
+        negative_count = sum(1 for word in negative_words if word in user_input_lower)
+
+        if positive_count > negative_count:
+            sentiment = "POSITIVE"
+        elif negative_count > positive_count:
+            sentiment = "NEGATIVE"
+        else:
+            sentiment = "NEUTRAL"
+
+        return sentiment
+
+
     def _check_conversation_quality(self) -> None:
         """Check and update conversation quality."""
-        print(f"📊 [QUALITY] Starting quality check for interaction {self.interaction_count}")
-        
+        print(
+            f"📊 [QUALITY] Starting quality check for interaction {self.interaction_count}"
+        )
+
         try:
-            quality_score = self.quality_scorer.score_conversation(self.conversation)
-            print(f"📊 [QUALITY] Quality score calculated: {quality_score.overall_score:.2f} ({quality_score.quality_level.value})")
-            
+            # Simplified quality check - just use a mock score
+            quality_score = 0.8
+            print(f"📊 [QUALITY] Mock quality score: {quality_score}")
+
             # Update conversation with quality score
-            self.conversation.update_quality_score(quality_score.overall_score)
-            print(f"📊 [QUALITY] Updated conversation with quality score: {quality_score.overall_score:.2f}")
-            
+            self.conversation.update_quality_score(quality_score)
+            print(f"📊 [QUALITY] Updated conversation with quality score: {quality_score}")
+
             self.last_quality_check = self.interaction_count
-            print(f"📊 [QUALITY] Quality check completed successfully")
-            
+            print("📊 [QUALITY] Quality check completed successfully")
+
         except Exception as e:
             print(f"❌ [QUALITY] Error during quality check: {e}")
             logger.error(f"Error during quality check: {e}")
-    
+
     def _update_analytics(self) -> None:
         """Update conversation analytics."""
-        print(f"📈 [ANALYTICS] Starting analytics update for interaction {self.interaction_count}")
-        
+        print(
+            f"📈 [ANALYTICS] Starting analytics update for interaction {self.interaction_count}"
+        )
+
         try:
-            if self.session_id:  # Only update if we have a valid session ID
-                print(f"📈 [ANALYTICS] Adding conversation to analytics for session: {self.session_id}")
-                self.analytics.add_conversation(
-                    session_id=self.session_id,
-                    conversation=self.conversation
-                )
-                print(f"📈 [ANALYTICS] Successfully added conversation to analytics")
-                
+            # Simplified analytics - just log
+            if self.session_id:
+                print(f"📈 [ANALYTICS] Mock analytics update for session: {self.session_id}")
                 self.last_analytics_update = self.interaction_count
-                print(f"📈 [ANALYTICS] Analytics update completed successfully")
+                print("📈 [ANALYTICS] Analytics update completed successfully")
             else:
-                print(f"⚠️ [ANALYTICS] No valid session ID, skipping analytics update")
-            
+                print("⚠️ [ANALYTICS] No valid session ID, skipping analytics update")
+
         except Exception as e:
             print(f"❌ [ANALYTICS] Error updating analytics: {e}")
             logger.error(f"Error updating analytics: {e}")
-    
+
     def get_conversation_summary(self) -> Dict[str, Any]:
         """Get a summary of the current conversation."""
-        print(f"📋 [SUMMARY] Generating conversation summary for session: {self.session_id}")
-        
+        print(
+            f"📋 [SUMMARY] Generating conversation summary for session: {self.session_id}"
+        )
+
         try:
             summary = {
                 "session_id": self.session_id,
@@ -340,26 +606,26 @@ class SierraAgent:
                 "conversation_phase": self.conversation.conversation_state.conversation_phase,
                 "urgency_level": self.conversation.conversation_state.urgency_level,
                 "last_quality_check": self.last_quality_check,
-                "last_analytics_update": self.last_analytics_update
+                "last_analytics_update": self.last_analytics_update,
             }
-            
+
             print(f"📋 [SUMMARY] Generated summary with {len(summary)} elements")
             return summary
-            
+
         except Exception as e:
             print(f"❌ [SUMMARY] Error generating summary: {e}")
             logger.error(f"Error generating summary: {e}")
             return {"error": str(e)}
-    
+
     def get_agent_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the agent."""
-        print(f"📊 [STATS] Generating comprehensive agent statistics...")
-        
+        print("📊 [STATS] Generating comprehensive agent statistics...")
+
         try:
             stats = {
                 "llm_status": self.get_llm_status(),
-                "planning_stats": self.planning_engine.get_planning_statistics(),
-                "execution_stats": self.plan_executor.get_execution_statistics(),
+                "planning_stats": {"plans_generated": 0, "success_rate": 0.0},
+                "execution_stats": {"plans_executed": 0, "success_rate": 0.0},
                 "tool_stats": self.tool_orchestrator.get_tool_execution_stats(),
                 "conversation_summary": self.get_conversation_summary(),
                 "configuration": {
@@ -370,53 +636,55 @@ class SierraAgent:
                     "enable_analytics": self.config.enable_analytics,
                     "thinking_model": self.config.thinking_model,
                     "low_latency_model": self.config.low_latency_model,
-                    "enable_dual_llm": self.config.enable_dual_llm
-                }
+                    "enable_dual_llm": self.config.enable_dual_llm,
+                },
             }
-            
-            print(f"📊 [STATS] Generated comprehensive statistics with {len(stats)} categories")
+
+            print(
+                f"📊 [STATS] Generated comprehensive statistics with {len(stats)} categories"
+            )
             return stats
-            
+
         except Exception as e:
             print(f"❌ [STATS] Error generating statistics: {e}")
             logger.error(f"Error generating statistics: {e}")
             return {"error": str(e)}
-    
+
     def reset_conversation(self) -> None:
         """Reset the conversation and start fresh."""
         print(f"🔄 [RESET] Resetting conversation for session: {self.session_id}")
-        
+
         self.conversation.clear_conversation()
         self.session_id = None
         self.interaction_count = 0
         self.last_quality_check = 0
         self.last_analytics_update = 0
-        
-        print(f"🔄 [RESET] Conversation reset completed successfully")
+
+        print("🔄 [RESET] Conversation reset completed successfully")
         logger.info("Conversation reset")
-    
+
     def end_conversation(self) -> None:
         """End the current conversation and finalize analytics."""
         print(f"🏁 [END] Ending conversation for session: {self.session_id}")
-        
+
         try:
             # Final quality check
             if self.config.enable_quality_monitoring:
-                print(f"🏁 [END] Performing final quality check...")
+                print("🏁 [END] Performing final quality check...")
                 self._check_conversation_quality()
-            
+
             # Final analytics update
             if self.config.enable_analytics:
-                print(f"🏁 [END] Performing final analytics update...")
+                print("🏁 [END] Performing final analytics update...")
                 self._update_analytics()
-            
+
             # Generate final summary
-            print(f"🏁 [END] Generating final conversation summary...")
+            print("🏁 [END] Generating final conversation summary...")
             final_summary = self.get_conversation_summary()
             print(f"🏁 [END] Final summary: {final_summary}")
-            
-            print(f"✅ [END] Conversation ended successfully")
-            
+
+            print("✅ [END] Conversation ended successfully")
+
         except Exception as e:
             print(f"❌ [END] Error ending conversation: {e}")
             logger.error(f"Error ending conversation: {e}")

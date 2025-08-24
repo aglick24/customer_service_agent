@@ -1,13 +1,11 @@
-"""Core system components."""
+"""Core agent functionality."""
 
-from .agent import SierraAgent, AgentConfig
-from .conversation import Conversation, Message, CustomerContext, ConversationState
+from .agent import AgentConfig, SierraAgent
+from .conversation import Conversation, MessageType
 
 __all__ = [
-    "SierraAgent",
-    "AgentConfig", 
+    "AgentConfig",
     "Conversation",
-    "Message",
-    "CustomerContext",
-    "ConversationState"
+    "MessageType",
+    "SierraAgent",
 ]

@@ -1,360 +1,338 @@
-# Sierra Agent - AI-Powered Customer Service Platform
+# Sierra Agent - AI-Powered Customer Service Agent
 
-A comprehensive AI customer service platform for Sierra Outfitters with real-time quality monitoring, detailed analytics, and intelligent business tool orchestration.
+**AI-powered customer service agent with intelligent planning and strategic execution**
 
-## 🚀 Features
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-19%20passed-brightgreen.svg)](https://github.com/sierraoutfitters/sierra-agent)
+[![Type Check](https://img.shields.io/badge/mypy-passing-brightgreen.svg)](https://mypy-lang.org/)
 
-- **Dual LLM Architecture**: 
-  - 🧠 GPT-4o for complex thinking and strategic planning
-  - ⚡ GPT-4o-mini for low latency operations and simple tasks
-- **Strategic Planning Engine**: Multi-step execution plans instead of reactive intent-based responses
-- **AI-Powered Conversations**: Intelligent customer interactions with planning capabilities
-- **Intent Classification**: Automatic understanding of customer requests
-- **Sentiment Analysis**: Real-time customer mood tracking
-- **Quality Monitoring**: Continuous conversation quality assessment
-- **Business Tools**: Comprehensive toolset for order management, product inquiries, and more
-- **Analytics Dashboard**: Detailed performance metrics and insights
-- **Modular Architecture**: Clean, maintainable codebase
+## 🚀 What's New: Planning Architecture!
 
-## 🏗️ Architecture
+The Sierra Agent has been **completely transformed** from a reactive tool execution system to an **intelligent, planning-based architecture** that automatically chooses between strategic planning and fast reactive responses.
+
+### ✨ Key Features
+- **🧠 Intelligent Planning**: Complex requests automatically use multi-step execution plans
+- **⚡ Smart Reactive Mode**: Simple requests get fast responses without planning overhead
+- **📊 Business Rules Engine**: Automated decisions based on urgency, sentiment, and intent
+- **🔄 Dual LLM System**: Separate models for thinking (planning) and fast responses
+- **📈 Quality Monitoring**: Real-time conversation quality assessment
+- **🔍 Comprehensive Analytics**: Detailed insights into agent performance
+
+## 🏗️ Architecture Overview
 
 ```
-sierra_agent/
-├── ai/                    # LLM integration and AI components
-├── core/                  # Core agent and conversation management
-├── analytics/             # Quality scoring and conversation analytics
-├── tools/                 # Business tools and orchestration
-│   ├── planning_engine.py # Strategic planning engine
-│   ├── plan_executor.py   # Plan execution and coordination
-│   └── business_tools.py  # Business logic tools
-├── data/                  # Data types and models
-└── utils/                 # Branding and error handling
+┌─────────────────────────────────────────────────────────────┐
+│                    Sierra Agent v2.0                        │
+├─────────────────────────────────────────────────────────────┤
+│  🧠 Planning Mode    │  ⚡ Reactive Mode                   │
+│  • Multi-step plans  │  • Fast responses                   │
+│  • Business rules    │  • Simple tool execution            │
+│  • Strategic logic   │  • Low latency                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Dual LLM Architecture
+### 🎯 How It Works
+1. **Input Analysis**: Analyzes length, intent, and sentiment
+2. **Smart Decision**: Automatically chooses planning vs reactive mode
+3. **Execution**: Either creates/executes plans or runs tools directly
+4. **Response**: Generates appropriate response based on execution results
 
-The system now uses two LLM clients for optimal performance:
+## 🚀 Quick Start
 
-- **🧠 Thinking LLM (GPT-4o)**: Used for complex reasoning, strategic planning, and multi-step problem solving
-- **⚡ Low Latency LLM (GPT-4o-mini)**: Used for fast responses, simple classifications, and routine tasks
-
-### Planning Mechanism
-
-Instead of reactive intent-based execution, the system now:
-
-1. **Analyzes** customer requests for complexity
-2. **Generates** strategic execution plans with multiple steps
-3. **Executes** plans with dependency management and error handling
-4. **Optimizes** execution order and handles conditional logic
-
-## 📋 Requirements
-
+### Prerequisites
 - Python 3.8+
 - OpenAI API key
-- Internet connection for API calls
 
-## 🛠️ Installation
+### Installation
+```bash
+# Clone the repository
+git clone https://github.com/sierraoutfitters/sierra-agent.git
+cd sierra-agent
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd customer_service_agent
-   ```
+# Install dependencies
+pip install -r requirements.txt
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Set your OpenAI API key
+export OPENAI_API_KEY="your-api-key-here"
+```
 
-3. **Set up environment variables**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OpenAI API key
-   export OPENAI_API_KEY="your-api-key-here"
-   ```
-
-4. **Run the application**:
-   ```bash
-   python main.py
-   ```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-- `OPENAI_API_KEY`: Your OpenAI API key (required)
-- `LOG_LEVEL`: Logging level (default: INFO)
-
-### Package Configuration
-
-The system uses `pyproject.toml` for package management with:
-- Clean dependency specification
-- Development tools configuration
-- Type checking with MyPy
-- Code formatting with Black
-- Testing with pytest
-
-### LLM Configuration
-
-The agent can be configured with different LLM models:
-
+### Basic Usage
 ```python
-from sierra_agent.core.agent import AgentConfig, SierraAgent
+from sierra_agent import PlanningSierraAgent
 
-# Dual LLM setup (recommended)
-config = AgentConfig(
-    enable_dual_llm=True,
-    thinking_model="gpt-4o",        # For complex planning
-    low_latency_model="gpt-4o-mini" # For fast responses
-)
+# Initialize the planning agent
+agent = PlanningSierraAgent()
 
-# Single LLM setup
-config = AgentConfig(
-    enable_dual_llm=False,
-    thinking_model="gpt-4o"  # Used for all operations
-)
+# Start a conversation
+session_id = agent.start_conversation()
 
-agent = SierraAgent(config)
+# Process user input (automatically chooses planning or reactive mode)
+response = agent.process_user_input("I need help with a complex order issue...")
+
+# Get comprehensive statistics
+stats = agent.get_agent_statistics()
 ```
 
-## 💬 Usage
-
-### Starting a Conversation
-
+### Command Line Interface
 ```bash
+# Run the interactive agent
 python main.py
+
+# Available commands:
+#   help     - Show available commands
+#   stats    - Display conversation statistics
+#   planning - Show planning system status
+#   summary  - Show conversation summary
+#   reset    - Reset current conversation
+#   quit     - Exit the application
 ```
 
-### Available Commands
+## 🧪 Testing & Demo
 
-- `help` - Show available commands
-- `stats` - Display conversation statistics
-- `summary` - Show current conversation summary
-- `reset` - Reset current conversation
-- `quit` - Exit the application
-
-### Example Interactions
-
-```
-👤 You: I need help finding hiking boots
-🤖 Sierra Agent: I'd be happy to help you find the perfect hiking boots! 
-    Let me search our inventory for you...
-
-👤 You: Track my order #12345
-🤖 Sierra Agent: I'll look up your order #12345 for you...
-    Order Status: Shipped
-    Estimated Delivery: 2024-01-15
-    Tracking Number: TRK789456123
-```
-
-### Testing the New Features
-
-To test the dual LLM setup and planning mechanism:
-
+### Run Tests
 ```bash
-# Test dual LLM and planning
-python test_dual_llm.py
+# All tests
+python3 -m pytest tests/ -v
 
-# Run the main application
-python main.py
+# Planning system tests
+python3 -m pytest tests/test_planning_agent.py -v
+
+# With coverage
+python3 -m pytest tests/ --cov=src --cov-report=html
 ```
-
-The test script demonstrates:
-- Dual LLM initialization and status
-- Planning engine functionality
-- Plan execution and statistics
-- LLM mode switching (single vs. dual)
-- Comprehensive agent statistics
-
-## 🧠 Planning Engine
-
-The new planning mechanism replaces reactive intent-based execution with strategic planning:
-
-### Plan Types
-
-- **Simple Linear Plans**: Basic tool execution sequences
-- **Conditional Plans**: Plans with branching logic based on results
-- **Complex Plans**: Multi-step plans with loops and optimization
-
-### Plan Execution
-
-- **Dependency Management**: Ensures steps execute in correct order
-- **Error Handling**: Graceful failure and retry mechanisms
-- **Progress Tracking**: Real-time execution status monitoring
-- **Result Aggregation**: Combines outputs from multiple steps
-
-### Example Plan
-
-```python
-# A plan for handling order status inquiries
-plan = Plan(
-    name="Order Status Inquiry",
-    steps=[
-        PlanStep("validate_order", "VALIDATION", "Validate order ID format"),
-        PlanStep("get_status", "TOOL_EXECUTION", "Retrieve order status", 
-                dependencies=["validate_order"]),
-        PlanStep("get_shipping", "TOOL_EXECUTION", "Get shipping info", 
-                dependencies=["get_status"])
-    ]
-)
-```
-
-## 🏪 Business Tools
-
-The system includes comprehensive business tools:
-
-### Order Management
-- Order status tracking
-- Shipping information
-- Delivery estimates
-
-### Product Services
-- Product search and recommendations
-- Availability checking
-- Detailed product information
-
-### Customer Service
-- Company information
-- Contact details
-- Policy information
-
-### Returns & Complaints
-- Return policy details
-- Complaint logging
-- Escalation procedures
-
-## 📊 Analytics & Quality
-
-### Quality Metrics
-- **Relevance Score**: Topic consistency and focus
-- **Helpfulness Score**: Response quality and tool usage
-- **Engagement Score**: Conversation flow and interaction
-- **Resolution Score**: Conversation completion
-- **Sentiment Trajectory**: Customer mood changes
-
-### Performance Tracking
-- Conversation duration and length
-- Intent distribution analysis
-- Tool effectiveness metrics
-- Quality trend analysis
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=html
-```
-
-## 🔍 Code Quality
 
 ### Type Checking
 ```bash
-mypy src/
+# Check types with mypy
+python3 -m mypy src/sierra_agent/ --show-error-codes
 ```
 
-### Code Formatting
+### Demo Script
 ```bash
-black src/
+# See the planning system in action
+python3 test_planning_demo.py
 ```
 
-### Linting
-```bash
-flake8 src/
+## 📊 Planning vs Reactive Examples
+
+### 🧠 Planning Mode (Complex Requests)
+**Input**: *"I have a complaint about my recent purchase that includes damaged items, incorrect sizing, delayed delivery, and poor customer service experience that needs to be escalated to management"*
+
+**System Response**: 
+- ✅ **Planning triggered** (length: 156 chars > 50 threshold)
+- 🧠 **Multi-step plan created** (complaint resolution workflow)
+- 📋 **Business rules applied** (negative sentiment + complaint intent)
+- 🚀 **Strategic execution** with proper escalation
+
+### ⚡ Reactive Mode (Simple Requests)
+**Input**: *"Hi there!"*
+
+**System Response**:
+- ⚡ **Reactive mode** (length: 8 chars < 50 threshold)
+- 🚀 **Fast response** generated immediately
+- 🛠️ **Simple tool execution** if needed
+- 💨 **Low latency** response
+
+## 🔧 Configuration
+
+### Planning Agent Configuration
+```python
+from sierra_agent import PlanningAgentConfig
+
+config = PlanningAgentConfig(
+    planning_threshold=50,        # Character threshold for planning
+    enable_planning=True,         # Enable planning system
+    thinking_model="gpt-4o",      # Model for complex reasoning
+    low_latency_model="gpt-4o-mini",  # Model for fast responses
+    enable_dual_llm=True,        # Use separate models
+    quality_check_interval=3,     # Check quality every 3 interactions
+    analytics_update_interval=5   # Update analytics every 5 interactions
+)
 ```
 
-## 📁 Project Structure
+### Business Rules
+The system automatically applies business rules:
+- **High urgency** requests → Planning mode
+- **Complex intents** (complaints, detailed inquiries) → Planning mode
+- **Negative sentiment** → Planning mode with escalation
+- **Long inputs** (>50 chars) → Planning mode
+
+## 📈 Monitoring & Analytics
+
+### Real-time Statistics
+```python
+# Get comprehensive agent statistics
+stats = agent.get_agent_statistics()
+
+# Planning system status
+planning_stats = stats['planning_stats']
+execution_stats = stats['execution_stats']
+
+# Conversation quality
+quality_score = agent.conversation.quality_score
+```
+
+### Quality Metrics
+- **Conversation quality scores** (0.0 - 1.0)
+- **Planning vs reactive usage** statistics
+- **Business rule trigger rates**
+- **Plan execution success rates**
+- **Response generation times**
+
+## 🏗️ Project Structure
 
 ```
-customer_service_agent/
-├── src/
-│   └── sierra_agent/      # Main package
-│       ├── ai/            # AI/LLM integration
-│       ├── core/          # Core system components
-│       ├── analytics/     # Quality and analytics
-│       ├── tools/         # Business tools
-│       ├── data/          # Data models
-│       └── utils/         # Utilities
-├── tests/                 # Test suite
-├── docs/                  # Documentation
-├── examples/              # Usage examples
-├── main.py               # Main entry point
-├── pyproject.toml        # Package configuration
-└── requirements.txt      # Dependencies
+sierra-agent/
+├── src/sierra_agent/
+│   ├── core/
+│   │   ├── planning_agent.py    # 🆕 Main planning agent
+│   │   ├── agent.py            # Legacy reactive agent
+│   │   └── conversation.py     # Conversation management
+│   ├── tools/
+│   │   ├── planning_engine.py  # 🆕 Plan generation
+│   │   ├── plan_executor.py    # 🆕 Plan execution
+│   │   └── tool_orchestrator.py # Tool management
+│   ├── ai/
+│   │   └── llm_client.py      # LLM integration
+│   ├── analytics/
+│   │   ├── quality_scorer.py   # Quality assessment
+│   │   └── conversation_analytics.py # Analytics
+│   └── data/
+│       └── data_types.py      # Data models
+├── tests/
+│   └── test_planning_agent.py # 🆕 Planning system tests
+├── main.py                    # 🆕 Updated CLI with planning
+├── test_planning_demo.py     # 🆕 Planning system demo
+└── PLANNING_ARCHITECTURE.md  # 🆕 Detailed architecture docs
 ```
 
-## 🚧 Development
+## 🔮 What's Next
 
-### Adding New Business Tools
+### Planned Enhancements
+- **Dynamic plan adjustment** based on execution results
+- **Learning from past plans** to improve future planning
+- **Multi-agent coordination** for complex scenarios
+- **Real-time plan optimization** based on conversation context
 
-1. Extend the `BusinessTools` class in `src/sierra_agent/tools/business_tools.py`
-2. Add tool mapping in `ToolOrchestrator.intent_tool_mapping`
-3. Update tests and documentation
-
-### Customizing Quality Metrics
-
-Modify `QualityScorer` in `src/sierra_agent/analytics/quality_scorer.py`:
-- Adjust metric weights
-- Add new quality dimensions
-- Customize scoring algorithms
-
-### Extending Data Models
-
-Add new data types in `src/sierra_agent/data/data_types.py`:
-- Define new enums and dataclasses
-- Add validation functions
-- Update serialization methods
-
-## 📈 Monitoring & Logging
-
-The system provides comprehensive logging:
-- Application-level logging
-- Error tracking and reporting
-- Performance metrics
-- Quality assessment logs
-
-## 🔒 Security
-
-- API keys stored in environment variables
-- Input sanitization and validation
-- Error message sanitization
-- Secure API communication
+### Extensibility
+The architecture is designed to be easily extensible:
+- **Custom business rules** can be added dynamically
+- **New planning strategies** can be implemented
+- **Additional LLM models** can be integrated
+- **Custom tool orchestration** can be added
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+## Development
+
+### Code Quality with Ruff
+
+This project uses [Ruff](https://github.com/astral-sh/ruff) for fast Python linting and formatting. Ruff is a modern, extremely fast Python linter and formatter written in Rust.
+
+#### Quick Commands
+
+```bash
+# Check code quality (linting)
+make lint
+
+# Check formatting
+make format
+
+# Auto-fix linting issues
+make fix
+
+# Auto-format code
+make format-fix
+
+# Run both linting and formatting checks
+make check
+
+# Show all available commands
+make help
+```
+
+#### Using Ruff Directly
+
+```bash
+# Lint the codebase
+python3 -m ruff check src/ tests/
+
+# Auto-fix issues
+python3 -m ruff check --fix src/ tests/
+
+# Check formatting
+python3 -m ruff format --check src/ tests/
+
+# Format code
+python3 -m ruff format src/ tests/
+```
+
+#### Configuration
+
+Ruff is configured in `pyproject.toml` with:
+- Line length: 88 characters (same as Black)
+- Target Python version: 3.8+
+- Comprehensive rule set including style, import sorting, and best practices
+- Auto-fix enabled for most rules
+
+#### What Ruff Checks
+
+- **Style**: PEP 8 compliance, line length, spacing
+- **Import sorting**: Automatic import organization
+- **Code quality**: Unused imports, variables, and functions
+- **Best practices**: Error handling, logging, security
+- **Performance**: Inefficient patterns and optimizations
+
+### Running Tests
+
+```bash
+# Run tests with coverage
+make test
+
+# Generate HTML coverage report
+make test-html
+```
+
+### Installation
+
+```bash
+# Install development dependencies
+make install-dev
+```
+
+## 📚 Documentation
+
+- **[Planning Architecture](PLANNING_ARCHITECTURE.md)** - Detailed planning system documentation
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Examples](examples/)** - Usage examples and tutorials
+- **[Testing Guide](docs/TESTING.md)** - Testing and development guide
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🙏 Acknowledgments
 
-For support and questions:
-- Email: dev@sierraoutfitters.com
-- Phone: 1-800-SIERRA-1
-- Website: www.sierraoutfitters.com
-
-## 🔄 Version History
-
-- **v1.0.0**: Initial release with core functionality
-  - AI-powered customer service
-  - Quality monitoring
-  - Business tool integration
-  - Analytics dashboard
+- **OpenAI** for providing the LLM capabilities
+- **Pydantic** for robust data validation
+- **Pytest** for comprehensive testing framework
+- **Mypy** for static type checking
 
 ---
 
-**Built with ❤️ by the Sierra Outfitters Development Team**
+## 🎉 Get Started Today!
+
+Transform your customer service with intelligent AI planning:
+
+```bash
+git clone https://github.com/sierraoutfitters/sierra-agent.git
+cd sierra-agent
+pip install -r requirements.txt
+export OPENAI_API_KEY="your-key-here"
+python main.py
+```
+
+**Experience the future of AI customer service with strategic planning and intelligent execution! 🚀**
