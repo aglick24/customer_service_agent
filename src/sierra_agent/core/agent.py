@@ -7,16 +7,19 @@ including conversation management, LLM integration, quality monitoring, and anal
 
 import logging
 import time
-from datetime import datetime
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
+from ..data.data_types import IntentType, SentimentType, PlanningRequest, ExecutionContext
 from ..ai.llm_client import LLMClient
-from ..core.conversation import Conversation
+from ..core.conversation import Conversation, ConversationState, MessageType
 from ..tools.tool_orchestrator import ToolOrchestrator
+from ..tools.planning_engine import PlanningEngine
+from ..tools.plan_executor import PlanExecutor
 from ..analytics.quality_scorer import QualityScorer
 from ..analytics.conversation_analytics import ConversationAnalytics
-from ..data.data_types import IntentType, SentimentType
+from ..utils.branding import Branding
+from ..utils.error_messages import ErrorMessages
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +34,10 @@ class AgentConfig:
     max_conversation_length: int = 50
     enable_quality_monitoring: bool = True
     enable_analytics: bool = True
+    # LLM Configuration
+    thinking_model: str = "gpt-4o"  # For complex reasoning and planning
+    low_latency_model: str = "gpt-4o-mini"  # For fast responses and simple tasks
+    enable_dual_llm: bool = True  # Whether to use dual LLM setup
 
 
 class SierraAgent:
@@ -44,8 +51,25 @@ class SierraAgent:
         print("🔧 [AGENT] Initializing conversation manager...")
         self.conversation = Conversation()
         
+        print("🔧 [AGENT] Initializing LLM clients...")
+        if self.config.enable_dual_llm:
+            print(f"🔧 [AGENT] Primary LLM (thinking): {self.config.thinking_model}")
+            self.thinking_llm = LLMClient(model_name=self.config.thinking_model, max_tokens=2000)
+            print(f"🔧 [AGENT] Secondary LLM (low latency): {self.config.low_latency_model}")
+            self.low_latency_llm = LLMClient(model_name=self.config.low_latency_model, max_tokens=1000)
+        else:
+            print(f"🔧 [AGENT] Single LLM mode: {self.config.thinking_model}")
+            self.thinking_llm = LLMClient(model_name=self.config.thinking_model, max_tokens=2000)
+            self.low_latency_llm = self.thinking_llm
+        
         print("🔧 [AGENT] Initializing tool orchestrator...")
-        self.tool_orchestrator = ToolOrchestrator()
+        self.tool_orchestrator = ToolOrchestrator(low_latency_llm=self.low_latency_llm)
+        
+        print("🔧 [AGENT] Initializing planning engine...")
+        self.planning_engine = PlanningEngine(thinking_llm=self.thinking_llm)
+        
+        print("🔧 [AGENT] Initializing plan executor...")
+        self.plan_executor = PlanExecutor()
         
         print("🔧 [AGENT] Initializing quality scorer...")
         self.quality_scorer = QualityScorer()
@@ -60,6 +84,37 @@ class SierraAgent:
         
         print("🔧 [AGENT] SierraAgent initialization complete!")
         logger.info("SierraAgent initialized successfully")
+    
+    def get_llm_status(self) -> Dict[str, Any]:
+        """Get the status of both LLM clients."""
+        return {
+            "thinking_llm": {
+                "model": self.thinking_llm.model_name,
+                "available": self.thinking_llm.is_available(),
+                "usage_stats": self.thinking_llm.get_usage_stats()
+            },
+            "low_latency_llm": {
+                "model": self.low_latency_llm.model_name,
+                "available": self.low_latency_llm.is_available(),
+                "usage_stats": self.low_latency_llm.get_usage_stats()
+            },
+            "dual_llm_enabled": self.config.enable_dual_llm
+        }
+    
+    def switch_llm_mode(self, enable_dual: bool) -> None:
+        """Switch between single and dual LLM modes."""
+        if enable_dual and not self.config.enable_dual_llm:
+            print("🔄 [AGENT] Switching to dual LLM mode...")
+            self.config.enable_dual_llm = True
+            # Reinitialize low latency LLM if needed
+            if self.low_latency_llm == self.thinking_llm:
+                self.low_latency_llm = LLMClient(model_name=self.config.low_latency_model, max_tokens=1000)
+                print(f"🔄 [AGENT] Low latency LLM initialized: {self.config.low_latency_model}")
+        elif not enable_dual and self.config.enable_dual_llm:
+            print("🔄 [AGENT] Switching to single LLM mode...")
+            self.config.enable_dual_llm = False
+            self.low_latency_llm = self.thinking_llm
+            print("🔄 [AGENT] Now using single LLM for all operations")
     
     def start_conversation(self) -> str:
         """Start a new conversation session."""
@@ -294,6 +349,37 @@ class SierraAgent:
         except Exception as e:
             print(f"❌ [SUMMARY] Error generating summary: {e}")
             logger.error(f"Error generating summary: {e}")
+            return {"error": str(e)}
+    
+    def get_agent_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive statistics about the agent."""
+        print(f"📊 [STATS] Generating comprehensive agent statistics...")
+        
+        try:
+            stats = {
+                "llm_status": self.get_llm_status(),
+                "planning_stats": self.planning_engine.get_planning_statistics(),
+                "execution_stats": self.plan_executor.get_execution_statistics(),
+                "tool_stats": self.tool_orchestrator.get_tool_execution_stats(),
+                "conversation_summary": self.get_conversation_summary(),
+                "configuration": {
+                    "quality_check_interval": self.config.quality_check_interval,
+                    "analytics_update_interval": self.config.analytics_update_interval,
+                    "max_conversation_length": self.config.max_conversation_length,
+                    "enable_quality_monitoring": self.config.enable_quality_monitoring,
+                    "enable_analytics": self.config.enable_analytics,
+                    "thinking_model": self.config.thinking_model,
+                    "low_latency_model": self.config.low_latency_model,
+                    "enable_dual_llm": self.config.enable_dual_llm
+                }
+            }
+            
+            print(f"📊 [STATS] Generated comprehensive statistics with {len(stats)} categories")
+            return stats
+            
+        except Exception as e:
+            print(f"❌ [STATS] Error generating statistics: {e}")
+            logger.error(f"Error generating statistics: {e}")
             return {"error": str(e)}
     
     def reset_conversation(self) -> None:

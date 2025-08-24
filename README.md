@@ -4,7 +4,11 @@ A comprehensive AI customer service platform for Sierra Outfitters with real-tim
 
 ## 🚀 Features
 
-- **AI-Powered Conversations**: GPT-4 integration for natural customer interactions
+- **Dual LLM Architecture**: 
+  - 🧠 GPT-4o for complex thinking and strategic planning
+  - ⚡ GPT-4o-mini for low latency operations and simple tasks
+- **Strategic Planning Engine**: Multi-step execution plans instead of reactive intent-based responses
+- **AI-Powered Conversations**: Intelligent customer interactions with planning capabilities
 - **Intent Classification**: Automatic understanding of customer requests
 - **Sentiment Analysis**: Real-time customer mood tracking
 - **Quality Monitoring**: Continuous conversation quality assessment
@@ -20,9 +24,28 @@ sierra_agent/
 ├── core/                  # Core agent and conversation management
 ├── analytics/             # Quality scoring and conversation analytics
 ├── tools/                 # Business tools and orchestration
+│   ├── planning_engine.py # Strategic planning engine
+│   ├── plan_executor.py   # Plan execution and coordination
+│   └── business_tools.py  # Business logic tools
 ├── data/                  # Data types and models
 └── utils/                 # Branding and error handling
 ```
+
+### Dual LLM Architecture
+
+The system now uses two LLM clients for optimal performance:
+
+- **🧠 Thinking LLM (GPT-4o)**: Used for complex reasoning, strategic planning, and multi-step problem solving
+- **⚡ Low Latency LLM (GPT-4o-mini)**: Used for fast responses, simple classifications, and routine tasks
+
+### Planning Mechanism
+
+Instead of reactive intent-based execution, the system now:
+
+1. **Analyzes** customer requests for complexity
+2. **Generates** strategic execution plans with multiple steps
+3. **Executes** plans with dependency management and error handling
+4. **Optimizes** execution order and handles conditional logic
 
 ## 📋 Requirements
 
@@ -71,6 +94,29 @@ The system uses `pyproject.toml` for package management with:
 - Code formatting with Black
 - Testing with pytest
 
+### LLM Configuration
+
+The agent can be configured with different LLM models:
+
+```python
+from sierra_agent.core.agent import AgentConfig, SierraAgent
+
+# Dual LLM setup (recommended)
+config = AgentConfig(
+    enable_dual_llm=True,
+    thinking_model="gpt-4o",        # For complex planning
+    low_latency_model="gpt-4o-mini" # For fast responses
+)
+
+# Single LLM setup
+config = AgentConfig(
+    enable_dual_llm=False,
+    thinking_model="gpt-4o"  # Used for all operations
+)
+
+agent = SierraAgent(config)
+```
+
 ## 💬 Usage
 
 ### Starting a Conversation
@@ -99,6 +145,58 @@ python main.py
     Order Status: Shipped
     Estimated Delivery: 2024-01-15
     Tracking Number: TRK789456123
+```
+
+### Testing the New Features
+
+To test the dual LLM setup and planning mechanism:
+
+```bash
+# Test dual LLM and planning
+python test_dual_llm.py
+
+# Run the main application
+python main.py
+```
+
+The test script demonstrates:
+- Dual LLM initialization and status
+- Planning engine functionality
+- Plan execution and statistics
+- LLM mode switching (single vs. dual)
+- Comprehensive agent statistics
+
+## 🧠 Planning Engine
+
+The new planning mechanism replaces reactive intent-based execution with strategic planning:
+
+### Plan Types
+
+- **Simple Linear Plans**: Basic tool execution sequences
+- **Conditional Plans**: Plans with branching logic based on results
+- **Complex Plans**: Multi-step plans with loops and optimization
+
+### Plan Execution
+
+- **Dependency Management**: Ensures steps execute in correct order
+- **Error Handling**: Graceful failure and retry mechanisms
+- **Progress Tracking**: Real-time execution status monitoring
+- **Result Aggregation**: Combines outputs from multiple steps
+
+### Example Plan
+
+```python
+# A plan for handling order status inquiries
+plan = Plan(
+    name="Order Status Inquiry",
+    steps=[
+        PlanStep("validate_order", "VALIDATION", "Validate order ID format"),
+        PlanStep("get_status", "TOOL_EXECUTION", "Retrieve order status", 
+                dependencies=["validate_order"]),
+        PlanStep("get_shipping", "TOOL_EXECUTION", "Get shipping info", 
+                dependencies=["get_status"])
+    ]
+)
 ```
 
 ## 🏪 Business Tools

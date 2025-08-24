@@ -14,7 +14,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime
 
-from ..data.data_types import IntentType, SentimentType
+from ..data.data_types import IntentType, SentimentType, Plan, PlanStep, PlanStepType, PlanPriority, PlanningRequest
 from ..utils.branding import Branding
 from ..utils.error_messages import ErrorMessages
 
@@ -57,7 +57,9 @@ class LLMClient:
         self.max_tokens = max_tokens
         
         # Get API key from environment
-        self.api_key = os.getenv('OPENAI_API_KEY')
+        self.api_key: Optional[str] = os.getenv('OPENAI_API_KEY')
+        self.client: Optional[OpenAI] = None
+        
         if self.api_key:
             print(f"✅ [LLM_CLIENT] OpenAI API key found")
             try:
@@ -72,7 +74,7 @@ class LLMClient:
             self.client = None
         
         # Initialize usage tracking
-        self.usage_stats = {
+        self.usage_stats: Dict[str, Any] = {
             "total_requests": 0,
             "total_tokens": 0,
             "requests_by_model": {},
@@ -161,6 +163,9 @@ class LLMClient:
         print(f"🌐 [LLM_CLIENT] Sending intent classification request to OpenAI...")
         
         try:
+            if not self.client:
+                raise ValueError("OpenAI client not initialized")
+                
             prompt = f"""
             Classify the customer's intent from the following message. Choose from these categories:
             - ORDER_STATUS: Questions about order tracking, shipping, delivery
@@ -183,7 +188,11 @@ class LLMClient:
                 temperature=0.1
             )
             
-            intent_text = response.choices[0].message.content.strip().upper()
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty response from OpenAI")
+                
+            intent_text = content.strip().upper()
             print(f"🌐 [LLM_CLIENT] OpenAI response: {intent_text}")
             
             # Map response to IntentType
@@ -243,6 +252,9 @@ class LLMClient:
         print(f"🌐 [LLM_CLIENT] Sending sentiment analysis request to OpenAI...")
         
         try:
+            if not self.client:
+                raise ValueError("OpenAI client not initialized")
+                
             prompt = f"""
             Analyze the sentiment of the following customer message. Choose from:
             - POSITIVE: Happy, satisfied, excited, grateful
@@ -261,7 +273,11 @@ class LLMClient:
                 temperature=0.1
             )
             
-            sentiment_text = response.choices[0].message.content.strip().upper()
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty response from OpenAI")
+                
+            sentiment_text = content.strip().upper()
             print(f"🌐 [LLM_CLIENT] OpenAI sentiment response: {sentiment_text}")
             
             # Map response to SentimentType
@@ -311,6 +327,9 @@ class LLMClient:
         print(f"🌐 [LLM_CLIENT] Sending response generation request to OpenAI...")
         
         try:
+            if not self.client:
+                raise ValueError("OpenAI client not initialized")
+                
             # Build prompt from context
             prompt = self._build_response_prompt(context)
             print(f"🌐 [LLM_CLIENT] Built prompt with {len(prompt)} characters")
@@ -322,7 +341,11 @@ class LLMClient:
                 temperature=0.7
             )
             
-            generated_response = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty response from OpenAI")
+                
+            generated_response = content.strip()
             print(f"🌐 [LLM_CLIENT] OpenAI generated response: {len(generated_response)} characters")
             
             return generated_response
@@ -437,6 +460,186 @@ class LLMClient:
         }
         
         print(f"✅ [LLM_CLIENT] Usage statistics reset")
+    
+    def generate_plan(self, request: PlanningRequest) -> Plan:
+        """Generate an execution plan for a customer request."""
+        print(f"🧠 [LLM_CLIENT] Generating plan for customer request...")
+        
+        try:
+            if self.api_key:
+                print(f"🧠 [LLM_CLIENT] Using OpenAI API for plan generation")
+                plan = self._generate_plan_with_openai(request)
+            else:
+                print(f"🧠 [LLM_CLIENT] Using mock plan generation")
+                plan = self._generate_plan_mock(request)
+            
+            print(f"✅ [LLM_CLIENT] Plan generated successfully with {len(plan.steps)} steps")
+            self._update_usage_stats("plan_generation")
+            return plan
+            
+        except Exception as e:
+            print(f"❌ [LLM_CLIENT] Error generating plan: {e}")
+            logger.error(f"Error generating plan: {e}")
+            
+            # Fallback to mock plan generation
+            print(f"🔄 [LLM_CLIENT] Falling back to mock plan generation")
+            return self._generate_plan_mock(request)
+    
+    def _generate_plan_with_openai(self, request: PlanningRequest) -> Plan:
+        """Generate plan using OpenAI API."""
+        print(f"🌐 [LLM_CLIENT] Sending plan generation request to OpenAI...")
+        
+        try:
+            if not self.client:
+                raise ValueError("OpenAI client not initialized")
+                
+            prompt = f"""
+            Generate an execution plan for handling this customer request. The plan should include logical steps that can be executed in sequence.
+            
+            Customer Request: "{request.customer_input}"
+            Available Tools: {request.available_tools}
+            Urgency Level: {request.urgency_level}
+            
+            Create a plan with the following structure:
+            1. Analyze the customer's request
+            2. Execute relevant tools in logical order
+            3. Handle any validation or conditional logic needed
+            4. Generate appropriate response
+            
+            Respond with a JSON structure for the plan:
+            {{
+                "name": "Plan Name",
+                "description": "Plan description",
+                "steps": [
+                    {{
+                        "step_id": "unique_id",
+                        "step_type": "TOOL_EXECUTION|VALIDATION|CONDITIONAL_BRANCH",
+                        "name": "Step name",
+                        "description": "Step description",
+                        "tool_name": "tool_name_if_applicable",
+                        "parameters": {{}},
+                        "dependencies": []
+                    }}
+                ]
+            }}
+            """
+            
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty response from OpenAI")
+                
+            plan_data = content.strip()
+            print(f"🌐 [LLM_CLIENT] OpenAI plan response: {plan_data[:100]}...")
+            
+            # Parse the plan (simplified - in production you'd want proper JSON parsing)
+            import json
+            try:
+                plan_dict = json.loads(plan_data)
+                return self._create_plan_from_dict(plan_dict, request)
+            except json.JSONDecodeError:
+                print(f"⚠️ [LLM_CLIENT] Invalid JSON from OpenAI, using fallback plan")
+                return self._generate_plan_mock(request)
+                
+        except Exception as e:
+            print(f"❌ [LLM_CLIENT] OpenAI API error: {e}")
+            raise
+    
+    def _generate_plan_mock(self, request: PlanningRequest) -> Plan:
+        """Generate a mock execution plan for testing."""
+        print(f"🎭 [LLM_CLIENT] Generating mock execution plan...")
+        
+        import uuid
+        
+        # Simple mock plan based on request content
+        if "order" in request.customer_input.lower():
+            steps = [
+                PlanStep(
+                    step_id="step_1",
+                    step_type=PlanStepType.VALIDATION,
+                    name="Validate Order Information",
+                    description="Validate the order details provided by the customer",
+                    tool_name="validate_order_info"
+                ),
+                PlanStep(
+                    step_id="step_2",
+                    step_type=PlanStepType.TOOL_EXECUTION,
+                    name="Get Order Status",
+                    description="Retrieve the current status of the order",
+                    tool_name="get_order_status",
+                    dependencies=["step_1"]
+                ),
+                PlanStep(
+                    step_id="step_3",
+                    step_type=PlanStepType.TOOL_EXECUTION,
+                    name="Get Shipping Information",
+                    description="Retrieve shipping and tracking details",
+                    tool_name="get_shipping_info",
+                    dependencies=["step_2"]
+                )
+            ]
+            plan_name = "Order Status Inquiry Plan"
+            plan_description = "Handle order status and shipping inquiries"
+        else:
+            steps = [
+                PlanStep(
+                    step_id="step_1",
+                    step_type=PlanStepType.TOOL_EXECUTION,
+                    name="Process Customer Request",
+                    description="Process the customer's request using available tools",
+                    tool_name="process_customer_request"
+                )
+            ]
+            plan_name = "General Customer Service Plan"
+            plan_description = "Handle general customer service requests"
+        
+        plan = Plan(
+            plan_id=f"mock_plan_{uuid.uuid4().hex[:8]}",
+            name=plan_name,
+            description=plan_description,
+            customer_request=request.customer_input,
+            steps=steps,
+            estimated_duration=45,
+            priority=PlanPriority.MEDIUM
+        )
+        
+        print(f"🎭 [LLM_CLIENT] Mock plan generated with {len(steps)} steps")
+        return plan
+    
+    def _create_plan_from_dict(self, plan_dict: Dict[str, Any], request: PlanningRequest) -> Plan:
+        """Create a Plan object from a dictionary."""
+        import uuid
+        
+        steps = []
+        for step_data in plan_dict.get("steps", []):
+            step = PlanStep(
+                step_id=step_data.get("step_id", f"step_{uuid.uuid4().hex[:8]}"),
+                step_type=PlanStepType(step_data.get("step_type", "TOOL_EXECUTION")),
+                name=step_data.get("name", "Unnamed Step"),
+                description=step_data.get("description", "Step description"),
+                tool_name=step_data.get("tool_name"),
+                parameters=step_data.get("parameters", {}),
+                dependencies=step_data.get("dependencies", [])
+            )
+            steps.append(step)
+        
+        plan = Plan(
+            plan_id=f"plan_{uuid.uuid4().hex[:8]}",
+            name=plan_dict.get("name", "Generated Plan"),
+            description=plan_dict.get("description", "AI-generated execution plan"),
+            customer_request=request.customer_input,
+            steps=steps,
+            estimated_duration=60,
+            priority=PlanPriority.MEDIUM
+        )
+        
+        return plan
     
     def change_model(self, new_model: str) -> None:
         """Change the model being used."""

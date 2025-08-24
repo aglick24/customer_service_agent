@@ -35,7 +35,8 @@ class QualityLevel(Enum):
     """Quality assessment levels."""
     EXCELLENT = "EXCELLENT"
     GOOD = "GOOD"
-    FAIR = "FAIR"
+    AVERAGE = "AVERAGE"
+    BELOW_AVERAGE = "BELOW_AVERAGE"
     POOR = "POOR"
 
 
@@ -137,6 +138,7 @@ class QualityScore:
     quality_level: QualityLevel
     recommendations: List[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
+    metrics: Dict[str, float] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert quality score to dictionary format."""
@@ -151,7 +153,8 @@ class QualityScore:
             "tool_effectiveness_score": self.tool_effectiveness_score,
             "quality_level": self.quality_level.value,
             "recommendations": self.recommendations,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
+            "metrics": self.metrics
         }
 
 
@@ -167,6 +170,17 @@ class ConversationMetrics:
     tool_usage: Dict[str, int]
     sentiment_trend: List[str]  # Will store sentiment values as strings
     timestamp: datetime = field(default_factory=datetime.now)
+    # Additional fields for analytics
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration: Optional[float] = None
+    message_count: Optional[int] = None
+    user_message_count: Optional[int] = None
+    ai_message_count: Optional[int] = None
+    conversation_phase: Optional[str] = None
+    urgency_level: Optional[str] = None
+    current_topic: Optional[str] = None
+    resolution_status: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary format."""
@@ -179,7 +193,17 @@ class ConversationMetrics:
             "intent_distribution": self.intent_distribution,
             "tool_usage": self.tool_usage,
             "sentiment_trend": self.sentiment_trend,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": self.duration,
+            "message_count": self.message_count,
+            "user_message_count": self.user_message_count,
+            "ai_message_count": self.ai_message_count,
+            "conversation_phase": self.conversation_phase,
+            "urgency_level": self.urgency_level,
+            "current_topic": self.current_topic,
+            "resolution_status": self.resolution_status
         }
 
 
@@ -255,3 +279,172 @@ def format_currency(amount: float) -> str:
 def format_datetime(dt: datetime) -> str:
     """Format datetime for display."""
     return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+class PlanStatus(Enum):
+    """Status of a plan execution."""
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class PlanStepType(Enum):
+    """Types of plan steps."""
+    TOOL_EXECUTION = "TOOL_EXECUTION"
+    CONDITIONAL_BRANCH = "CONDITIONAL_BRANCH"
+    LOOP = "LOOP"
+    USER_INTERACTION = "USER_INTERACTION"
+    DATA_TRANSFORMATION = "DATA_TRANSFORMATION"
+    VALIDATION = "VALIDATION"
+
+
+class PlanPriority(Enum):
+    """Priority levels for plan execution."""
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+@dataclass
+class PlanStep:
+    """A single step in an execution plan."""
+    step_id: str
+    step_type: PlanStepType
+    name: str
+    description: str
+    tool_name: Optional[str] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    dependencies: List[str] = field(default_factory=list)  # List of step_ids this depends on
+    conditions: Optional[Dict[str, Any]] = None  # Conditions for conditional execution
+    max_retries: int = 3
+    timeout_seconds: int = 30
+    priority: PlanPriority = PlanPriority.MEDIUM
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert plan step to dictionary format."""
+        return {
+            "step_id": self.step_id,
+            "step_type": self.step_type.value,
+            "name": self.name,
+            "description": self.description,
+            "tool_name": self.tool_name,
+            "parameters": self.parameters,
+            "dependencies": self.dependencies,
+            "conditions": self.conditions,
+            "max_retries": self.max_retries,
+            "timeout_seconds": self.timeout_seconds,
+            "priority": self.priority.value,
+            "metadata": self.metadata
+        }
+
+
+@dataclass
+class Plan:
+    """A complete execution plan for handling a customer request."""
+    plan_id: str
+    name: str
+    description: str
+    customer_request: str
+    steps: List[PlanStep]
+    estimated_duration: int = 0  # in seconds
+    priority: PlanPriority = PlanPriority.MEDIUM
+    created_at: datetime = field(default_factory=datetime.now)
+    status: PlanStatus = PlanStatus.PENDING
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert plan to dictionary format."""
+        return {
+            "plan_id": self.plan_id,
+            "name": self.name,
+            "description": self.description,
+            "customer_request": self.customer_request,
+            "steps": [step.to_dict() for step in self.steps],
+            "estimated_duration": self.estimated_duration,
+            "priority": self.priority.value,
+            "created_at": self.created_at.isoformat(),
+            "status": self.status.value,
+            "metadata": self.metadata
+        }
+
+
+@dataclass
+class ExecutionContext:
+    """Context for plan execution."""
+    plan_id: str
+    session_id: str
+    user_input: str
+    conversation_history: List[Dict[str, Any]]
+    current_step: Optional[str] = None
+    step_results: Dict[str, Any] = field(default_factory=dict)
+    global_variables: Dict[str, Any] = field(default_factory=dict)
+    execution_start: datetime = field(default_factory=datetime.now)
+    last_activity: datetime = field(default_factory=datetime.now)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert execution context to dictionary format."""
+        return {
+            "plan_id": self.plan_id,
+            "session_id": self.session_id,
+            "user_input": self.user_input,
+            "conversation_history": self.conversation_history,
+            "current_step": self.current_step,
+            "step_results": self.step_results,
+            "global_variables": self.global_variables,
+            "execution_start": self.execution_start.isoformat(),
+            "last_activity": self.last_activity.isoformat()
+        }
+
+
+@dataclass
+class PlanExecutionResult:
+    """Result of plan execution."""
+    plan_id: str
+    success: bool
+    completed_steps: List[str]
+    failed_steps: List[str]
+    total_duration: float
+    final_output: Any
+    error_message: Optional[str] = None
+    execution_log: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert plan execution result to dictionary format."""
+        return {
+            "plan_id": self.plan_id,
+            "success": self.success,
+            "completed_steps": self.completed_steps,
+            "failed_steps": self.failed_steps,
+            "total_duration": self.total_duration,
+            "final_output": self.final_output,
+            "error_message": self.error_message,
+            "execution_log": self.execution_log,
+            "metadata": self.metadata
+        }
+
+
+@dataclass
+class PlanningRequest:
+    """Request for creating a plan."""
+    customer_input: str
+    conversation_context: Dict[str, Any]
+    available_tools: List[str]
+    business_rules: List[BusinessRule]
+    customer_profile: Optional[Customer] = None
+    urgency_level: str = "NORMAL"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert planning request to dictionary format."""
+        return {
+            "customer_input": self.customer_input,
+            "conversation_context": self.conversation_context,
+            "available_tools": self.available_tools,
+            "business_rules": [rule.to_dict() for rule in self.business_rules],
+            "customer_profile": self.customer_profile.to_dict() if self.customer_profile else None,
+            "urgency_level": self.urgency_level
+        }

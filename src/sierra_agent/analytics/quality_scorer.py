@@ -98,6 +98,13 @@ class QualityScorer:
             # Create quality score object
             quality_score = QualityScore(
                 overall_score=overall_score,
+                relevance_score=topic_relevance_score,  # Use topic relevance as relevance
+                helpfulness_score=resolution_efficiency_score,  # Use resolution efficiency as helpfulness
+                engagement_score=message_length_score,  # Use message length as engagement
+                resolution_score=resolution_efficiency_score,
+                sentiment_trajectory_score=sentiment_consistency_score,
+                response_time_score=response_time_score,
+                tool_effectiveness_score=0.5,  # Default value since we don't calculate this
                 quality_level=quality_level,
                 metrics={
                     "response_time_score": response_time_score,
@@ -118,6 +125,13 @@ class QualityScorer:
             # Return default quality score on error
             return QualityScore(
                 overall_score=0.5,
+                relevance_score=0.5,
+                helpfulness_score=0.5,
+                engagement_score=0.5,
+                resolution_score=0.5,
+                sentiment_trajectory_score=0.5,
+                response_time_score=0.5,
+                tool_effectiveness_score=0.5,
                 quality_level=QualityLevel.AVERAGE,
                 metrics={}
             )

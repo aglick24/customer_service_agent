@@ -116,19 +116,22 @@ class ConversationAnalytics:
             # Create conversation metrics
             conv_metrics = ConversationMetrics(
                 session_id=session_id,
+                conversation_length=conversation.get_conversation_length(),
+                duration_seconds=conversation.get_conversation_duration(),
+                quality_score=conversation.quality_score or 0.0,
+                customer_satisfaction=0.0,  # Default value
+                intent_distribution={},  # Will be populated if available
+                tool_usage={},  # Will be populated if available
+                sentiment_trend=sentiment_trend,
                 start_time=conversation.start_time.isoformat(),
                 end_time=conversation.last_activity.isoformat(),
                 duration=conversation.get_conversation_duration(),
                 message_count=conversation.get_conversation_length(),
                 user_message_count=len(conversation.get_user_messages()),
                 ai_message_count=len(conversation.get_ai_messages()),
-                quality_score=conversation.quality_score or 0.0,
                 conversation_phase=conversation.conversation_state.conversation_phase,
                 urgency_level=conversation.conversation_state.urgency_level,
                 current_topic=conversation.conversation_state.current_topic,
-                sentiment_trend=sentiment_trend,
-                intent_distribution={},  # Will be populated if available
-                tool_usage={},  # Will be populated if available
                 resolution_status="completed" if conversation.conversation_state.conversation_phase == "closing" else "in_progress"
             )
             
@@ -203,9 +206,9 @@ class ConversationAnalytics:
         try:
             # Calculate basic statistics
             total_conversations = len(self.conversations)
-            total_duration = sum(conv.duration for conv in self.conversations.values())
-            total_messages = sum(conv.message_count for conv in self.conversations.values())
-            avg_quality_score = sum(conv.quality_score for conv in self.conversations.values()) / total_conversations
+            total_duration = sum(conv.duration for conv in self.conversations.values() if conv.duration is not None)
+            total_messages = sum(conv.message_count for conv in self.conversations.values() if conv.message_count is not None)
+            avg_quality_score = sum(conv.quality_score for conv in self.conversations.values() if conv.quality_score is not None) / total_conversations
             
             print(f"📋 [ANALYTICS] Basic stats: {total_conversations} conversations, {total_messages} messages")
             
@@ -222,13 +225,13 @@ class ConversationAnalytics:
                     tool_counts[tool] += count
             
             # Conversation phases
-            phase_counts = Counter(conv.conversation_phase for conv in self.conversations.values())
+            phase_counts = Counter(conv.conversation_phase for conv in self.conversations.values() if conv.conversation_phase is not None)
             
             # Topics
-            topic_counts = Counter(conv.current_topic for conv in self.conversations.values())
+            topic_counts = Counter(conv.current_topic for conv in self.conversations.values() if conv.current_topic is not None)
             
             # Urgency levels
-            urgency_counts = Counter(conv.urgency_level for conv in self.conversations.values())
+            urgency_counts = Counter(conv.urgency_level for conv in self.conversations.values() if conv.urgency_level is not None)
             
             summary = {
                 "total_conversations": total_conversations,
@@ -263,9 +266,10 @@ class ConversationAnalytics:
         try:
             # Aggregate intent data
             intent_counts: Counter[str] = Counter()
-            intent_quality_scores = {}
-            intent_duration = {}
-            intent_message_counts = {}
+            # Calculate intent-specific metrics
+            intent_quality_scores: Dict[str, List[Optional[float]]] = {}
+            intent_duration: Dict[str, List[Optional[float]]] = {}
+            intent_message_counts: Dict[str, List[Optional[int]]] = {}
             
             for conv in self.conversations.values():
                 for intent, count in conv.intent_distribution.items():
@@ -293,11 +297,16 @@ class ConversationAnalytics:
                 durations = intent_duration[intent]
                 message_counts = intent_message_counts[intent]
                 
+                # Filter out None values and calculate averages
+                valid_quality_scores = [score for score in quality_scores if score is not None]
+                valid_durations = [dur for dur in durations if dur is not None]
+                valid_message_counts = [count for count in message_counts if count is not None]
+                
                 intent_analysis[intent] = {
                     "count": intent_counts[intent],
-                    "average_quality_score": round(sum(quality_scores) / len(quality_scores), 3),
-                    "average_duration": round(sum(durations) / len(durations), 2),
-                    "average_message_count": round(sum(message_counts) / len(message_counts), 2)
+                    "average_quality_score": round(sum(valid_quality_scores) / len(valid_quality_scores), 3) if valid_quality_scores else 0.0,
+                    "average_duration": round(sum(valid_durations) / len(valid_durations), 2) if valid_durations else 0.0,
+                    "average_message_count": round(sum(valid_message_counts) / len(valid_message_counts), 2) if valid_message_counts else 0
                 }
             
             print(f"🧠 [ANALYTICS] Intent analysis generated for {len(intent_analysis)} intent types")
@@ -319,8 +328,9 @@ class ConversationAnalytics:
         try:
             # Aggregate tool usage data
             tool_counts: Counter[str] = Counter()
-            tool_quality_scores = {}
-            tool_conversation_counts = {}
+            # Calculate tool-specific metrics
+            tool_quality_scores: Dict[str, List[Optional[float]]] = {}
+            tool_conversation_counts: Dict[str, set] = {}
             
             for conv in self.conversations.values():
                 for tool, count in conv.tool_usage.items():
@@ -342,10 +352,13 @@ class ConversationAnalytics:
                 quality_scores = tool_quality_scores[tool]
                 conversation_count = len(tool_conversation_counts[tool])
                 
+                # Filter out None values
+                valid_quality_scores = [score for score in quality_scores if score is not None]
+                
                 tool_effectiveness[tool] = {
                     "total_usage": tool_counts[tool],
                     "conversations_used_in": conversation_count,
-                    "average_quality_score": round(sum(quality_scores) / len(quality_scores), 3),
+                    "average_quality_score": round(sum(valid_quality_scores) / len(valid_quality_scores), 3) if valid_quality_scores else 0.0,
                     "usage_frequency": round(tool_counts[tool] / conversation_count, 2) if conversation_count > 0 else 0
                 }
             
@@ -370,7 +383,7 @@ class ConversationAnalytics:
             cutoff_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
             recent_conversations = [
                 conv for conv in self.conversations.values()
-                if datetime.fromisoformat(conv.start_time).timestamp() > cutoff_date
+                if conv.start_time and datetime.fromisoformat(conv.start_time).timestamp() > cutoff_date
             ]
             
             print(f"📈 [ANALYTICS] Found {len(recent_conversations)} conversations in last {days} days")
@@ -379,20 +392,24 @@ class ConversationAnalytics:
                 return {"message": f"No conversations found in last {days} days"}
             
             # Group by day
-            daily_quality = {}
+            daily_quality: Dict[str, List[Optional[float]]] = {}
             for conv in recent_conversations:
-                date = conv.start_time.split('T')[0]  # Extract date part
-                if date not in daily_quality:
-                    daily_quality[date] = []
-                daily_quality[date].append(conv.quality_score)
+                if conv.start_time:
+                    date = conv.start_time.split('T')[0]  # Extract date part
+                    if date not in daily_quality:
+                        daily_quality[date] = []
+                    daily_quality[date].append(conv.quality_score)
             
             # Calculate daily averages
             trends = {}
             for date, scores in daily_quality.items():
-                trends[date] = {
-                    "average_quality": round(sum(scores) / len(scores), 3),
-                    "conversation_count": len(scores)
-                }
+                # Filter out None values
+                valid_scores = [score for score in scores if score is not None]
+                if valid_scores:
+                    trends[date] = {
+                        "average_quality": round(sum(valid_scores) / len(valid_scores), 3),
+                        "conversation_count": len(valid_scores)
+                    }
             
             # Sort by date
             sorted_trends = dict(sorted(trends.items()))
