@@ -7,13 +7,20 @@ including intent classification, response generation, and tool orchestration.
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..ai.llm_client import LLMClient
 from ..core.conversation import Conversation
-from ..data.data_types import IntentType, MultiTurnPlan, PlanStep, PlanStatus
-from ..tools.business_tools import BusinessTools
+from ..data.data_types import (
+    IntentType,
+    MultiTurnPlan,
+    PlanStatus,
+    PlanStep,
+    ToolResult,
+)
 from ..tools.tool_orchestrator import ToolOrchestrator
 
 # Configure logging
@@ -154,8 +161,18 @@ class SierraAgent:
             # Generate response from plan results
             response = self._generate_response_from_plan(plan, execution_results)
 
-            # Add AI response to conversation
-            self.conversation.add_ai_message(response)
+            # NEW: Add AI response with tool results to conversation
+            successful_tool_results = []
+            for step_result in execution_results["steps"]:
+                if step_result["success"] and isinstance(step_result["result"], ToolResult):
+                    successful_tool_results.append(step_result["result"])
+
+            self.conversation.add_ai_message_with_results(
+                content=response,
+                tool_results=successful_tool_results,
+                intent=str(plan.intent.value) if plan.intent else None,
+                plan_id=plan.plan_id
+            )
 
             # Check if quality monitoring is needed
             if (
@@ -188,23 +205,20 @@ class SierraAgent:
     def _generate_plan(self, user_input: str) -> MultiTurnPlan:
         """Generate a comprehensive plan for handling the user request."""
         print(f"🧠 [PLAN] Generating plan for: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
-        
-        import uuid
-        from datetime import datetime
-        
+
         try:
             # Analyze the request to determine what needs to be done
             plan_context = self._analyze_request(user_input)
-            
+
             # Generate plan steps based on the request
             steps = self._generate_plan_steps(user_input, plan_context)
-            
+
             # Create the plan
             plan_id = f"plan_{uuid.uuid4().hex[:8]}"
-            
+
             # Get intent from context (now always an IntentType enum)
             intent_enum = plan_context.get("primary_intent", IntentType.GENERAL_INQUIRY)
-            
+
             plan = MultiTurnPlan(
                 plan_id=plan_id,
                 intent=intent_enum,
@@ -214,10 +228,10 @@ class SierraAgent:
                 created_at=datetime.now(),
                 conversation_context={"session_id": self.session_id, "original_request": user_input}
             )
-            
+
             print(f"🧠 [PLAN] Generated plan '{plan_id}' with {len(steps)} steps")
             return plan
-            
+
         except Exception as e:
             print(f"❌ [PLAN] Error generating plan: {e}")
             # Create a fallback plan
@@ -226,44 +240,44 @@ class SierraAgent:
     def _analyze_request(self, user_input: str) -> Dict[str, Any]:
         """Analyze the user request to understand what needs to be done."""
         print(f"🔍 [ANALYSIS] Analyzing request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
-        
+
         user_lower = user_input.lower()
         context: Dict[str, Any] = {"request_type": "general", "complexity": "simple"}
-        
+
         # Detect order-related requests
         if any(keyword in user_lower for keyword in ["order", "track", "delivery", "shipping", "#w", "order number"]):
             context["request_type"] = "order_status"
             context["primary_intent"] = IntentType.ORDER_STATUS
-            
-        # Detect product-related requests  
+
+        # Detect product-related requests
         elif any(keyword in user_lower for keyword in ["product", "recommend", "looking for", "need", "buy", "search"]):
             context["request_type"] = "product_inquiry"
             context["primary_intent"] = IntentType.PRODUCT_INQUIRY
-            
+
         # Detect promotion requests
         elif any(keyword in user_lower for keyword in ["discount", "promotion", "code", "early risers", "sale"]):
             context["request_type"] = "promotion"
             context["primary_intent"] = IntentType.EARLY_RISERS_PROMOTION
-            
+
         # Detect complex multi-part requests
         if len(user_input.split()) > 20 or "and" in user_lower or "also" in user_lower:
             context["complexity"] = "complex"
-            
+
         print(f"🔍 [ANALYSIS] Request type: {context['request_type']}, complexity: {context['complexity']}")
         return context
 
     def _generate_plan_steps(self, user_input: str, context: Dict[str, Any]) -> List[PlanStep]:
         """Generate specific plan steps based on the request context."""
         import uuid
-        
+
         steps = []
         request_type = context.get("request_type", "general")
-        
+
         if request_type == "order_status":
             steps.extend([
                 PlanStep(
                     step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Extract Order Information", 
+                    name="Extract Order Information",
                     description="Extract email and order number from user input",
                     tool_name="extract_order_info",
                     parameters={"user_input": user_input}
@@ -277,7 +291,7 @@ class SierraAgent:
                     dependencies=["Extract Order Information"]
                 )
             ])
-            
+
         elif request_type == "product_inquiry":
             steps.extend([
                 PlanStep(
@@ -296,7 +310,7 @@ class SierraAgent:
                     dependencies=["Understand Product Needs"]
                 )
             ])
-            
+
         elif request_type == "promotion":
             steps.append(
                 PlanStep(
@@ -307,7 +321,7 @@ class SierraAgent:
                     parameters={"user_input": user_input}
                 )
             )
-            
+
         else:
             # General inquiry - create adaptive plan
             steps.append(
@@ -319,116 +333,195 @@ class SierraAgent:
                     parameters={"user_input": user_input}
                 )
             )
-        
+
         print(f"🛠️ [STEPS] Generated {len(steps)} plan steps for {request_type}")
         return steps
 
     def _execute_plan(self, plan: MultiTurnPlan) -> Dict[str, Any]:
         """Execute all steps in the plan."""
         print(f"🚀 [EXECUTION] Executing plan '{plan.plan_id}' with {len(plan.steps)} steps")
-        
+
         plan.status = PlanStatus.IN_PROGRESS
         execution_results: Dict[str, Any] = {"steps": [], "overall_success": True}
-        
-        for step in plan.steps:
+
+        # NEW: Execute steps in dependency order
+        execution_order = self._resolve_step_dependencies(plan.steps)
+        print(f"🔗 [EXECUTION] Dependency-resolved execution order: {[step.name for step in execution_order]}")
+
+        for step in execution_order:
             print(f"🔧 [EXECUTION] Executing step: {step.name}")
-            
+
             try:
-                # Execute the step using the tool orchestrator
-                result = self._execute_plan_step(step, plan.conversation_context)
+                # Gather data from dependency steps
+                dependency_data = self._gather_dependency_data(step, execution_results["steps"])
+
+                # Execute the step with dependency data
+                result = self._execute_plan_step(step, plan.conversation_context, dependency_data)
                 step.result = result
                 step.is_completed = True
-                
+
                 execution_results["steps"].append({
                     "step_id": step.step_id,
                     "name": step.name,
                     "success": True,
                     "result": result
                 })
-                
+
                 print(f"✅ [EXECUTION] Step '{step.name}' completed successfully")
-                
+
             except Exception as e:
                 print(f"❌ [EXECUTION] Step '{step.name}' failed: {e}")
                 step.result = {"error": str(e)}
                 execution_results["overall_success"] = False
-                
+
                 execution_results["steps"].append({
                     "step_id": step.step_id,
                     "name": step.name,
                     "success": False,
                     "error": str(e)
                 })
-        
+
         # Update plan status
         plan.status = PlanStatus.COMPLETED if execution_results["overall_success"] else PlanStatus.FAILED
-        
+
         print(f"🏁 [EXECUTION] Plan execution completed. Status: {plan.status}")
         return execution_results
 
-    def _execute_plan_step(self, step: PlanStep, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute_plan_step(self, step: PlanStep, context: Dict[str, Any], dependency_data: Optional[Dict[str, Any]] = None) -> ToolResult:
         """Execute a single plan step."""
         print(f"⚙️ [STEP] Executing: {step.tool_name}")
-        
-        # Map plan step tools to business tool methods
-        tool_mapping = {
-            "get_order_status": self.tool_orchestrator.business_tools.get_order_status,
-            "search_products": self.tool_orchestrator.business_tools.search_products,
-            "get_product_recommendations": self.tool_orchestrator.business_tools.get_product_recommendations,
-            "get_early_risers_promotion": self.tool_orchestrator.business_tools.get_early_risers_promotion,
-        }
-        
-        # Handle special analysis steps
+
+        # Handle special analysis steps - convert to ToolResult format
         if step.tool_name == "extract_order_info":
-            return self._extract_order_info(step.parameters["user_input"])
-        elif step.tool_name == "analyze_product_request":
-            return self._analyze_product_request(step.parameters["user_input"])
-        elif step.tool_name == "handle_general_inquiry":
-            return self._handle_general_inquiry(step.parameters["user_input"])
-        
-        # Execute business tool via orchestrator
+            result_data = self._extract_order_info(step.parameters["user_input"])
+            return ToolResult(success=True, data=result_data, error=None)
+        if step.tool_name == "analyze_product_request":
+            result_data = self._analyze_product_request(step.parameters["user_input"])
+            return ToolResult(success=True, data=result_data, error=None)
+        if step.tool_name == "handle_general_inquiry":
+            result_data = self._handle_general_inquiry(step.parameters["user_input"])
+            return ToolResult(success=True, data=result_data, error=None)
+
+        # Execute business tool via orchestrator (now returns ToolResult)
+        tool_mapping = {
+            "get_order_status": True,
+            "search_products": True,
+            "get_product_recommendations": True,
+            "get_early_risers_promotion": True,
+        }
+
         if step.tool_name in tool_mapping:
             # Use the original user input for tool execution
             original_input = step.parameters.get("user_input") or context.get("original_request", "")
             return self.tool_orchestrator.execute_tool(step.tool_name, original_input)
-        else:
-            raise ValueError(f"Unknown tool: {step.tool_name}")
+        return ToolResult(
+            success=False,
+            error=f"Unknown tool: {step.tool_name}",
+            data=None
+        )
+
+    def _resolve_step_dependencies(self, steps: List[PlanStep]) -> List[PlanStep]:
+        """Resolve step dependencies and return steps in execution order."""
+        print(f"🔗 [DEPENDENCIES] Resolving dependencies for {len(steps)} steps")
+
+        # Create lookup map by step name
+        step_by_name = {step.name: step for step in steps}
+        completed_steps = set()
+        execution_order = []
+        remaining_steps = list(steps)
+
+        # Safety counter to prevent infinite loops
+        max_iterations = len(steps) * 2
+        iterations = 0
+
+        while remaining_steps and iterations < max_iterations:
+            iterations += 1
+            made_progress = False
+
+            for step in remaining_steps[:]:  # Copy list to avoid modification during iteration
+                # Check if all dependencies are satisfied
+                dependencies_satisfied = True
+                for dep_name in step.dependencies:
+                    if dep_name not in completed_steps:
+                        dependencies_satisfied = False
+                        print(f"🔗 [DEPENDENCIES] Step '{step.name}' waiting for dependency '{dep_name}'")
+                        break
+
+                if dependencies_satisfied:
+                    print(f"✅ [DEPENDENCIES] Step '{step.name}' ready for execution")
+                    execution_order.append(step)
+                    completed_steps.add(step.name)
+                    remaining_steps.remove(step)
+                    made_progress = True
+
+            if not made_progress:
+                # Handle circular dependencies or missing dependencies
+                print("⚠️ [DEPENDENCIES] Circular or missing dependencies detected")
+                print(f"⚠️ [DEPENDENCIES] Remaining steps: {[s.name for s in remaining_steps]}")
+                print(f"⚠️ [DEPENDENCIES] Completed steps: {list(completed_steps)}")
+
+                # Add remaining steps to execution order (fallback)
+                execution_order.extend(remaining_steps)
+                break
+
+        print(f"🔗 [DEPENDENCIES] Final execution order: {[s.name for s in execution_order]}")
+        return execution_order
+
+    def _gather_dependency_data(self, step: PlanStep, completed_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Gather data from completed dependency steps."""
+        print(f"📊 [DEPENDENCIES] Gathering dependency data for step '{step.name}'")
+
+        dependency_data = {}
+
+        for dep_name in step.dependencies:
+            # Find the completed step with this name
+            for completed_step in completed_steps:
+                if completed_step["name"] == dep_name and completed_step["success"]:
+                    step_result = completed_step["result"]
+                    if isinstance(step_result, ToolResult) and step_result.success:
+                        dependency_data[dep_name] = step_result.data
+                        print(f"📊 [DEPENDENCIES] Found data for dependency '{dep_name}'")
+                    break
+
+        print(f"📊 [DEPENDENCIES] Gathered {len(dependency_data)} dependency data items")
+        return dependency_data
 
     def _generate_response_from_plan(self, plan: MultiTurnPlan, execution_results: Dict[str, Any]) -> str:
         """Generate a response based on plan execution results."""
         print(f"💭 [RESPONSE] Generating response for plan '{plan.plan_id}'")
-        
+
         # Debug: Print execution results
         print(f"💭 [RESPONSE] Execution results: {execution_results}")
-        
-        # Collect all successful results
-        successful_results = []
+
+        # Collect all successful ToolResult objects
+        successful_tool_results = []
         for step_result in execution_results["steps"]:
-            if step_result["success"]:
-                successful_results.append(step_result["result"])
-        
-        print(f"💭 [RESPONSE] Found {len(successful_results)} successful results")
-        
-        if not successful_results:
+            if step_result["success"] and isinstance(step_result["result"], ToolResult):
+                successful_tool_results.append(step_result["result"])
+
+        print(f"💭 [RESPONSE] Found {len(successful_tool_results)} successful ToolResults")
+
+        if not successful_tool_results:
             return "I apologize, but I'm having trouble processing your request right now. Please try again or contact our support team."
-        
-        # Find the most relevant business data (prioritize actual business operations over extraction)
-        primary_business_data = {}
-        for result in successful_results:
-            if isinstance(result, dict):
-                # Prioritize results that contain actual business data
-                if any(key in result for key in ['order_number', 'customer_name', 'status', 'products', 'available', 'discount_code']):
-                    primary_business_data = result
+
+        # Find the most relevant business data (prioritize business objects over extraction results)
+        primary_tool_result = None
+        for tool_result in successful_tool_results:
+            if tool_result.success and tool_result.data:
+                # Prioritize typed business objects (Order, Product, Promotion) over dicts
+                from ..data.data_types import Order, Product, Promotion
+                if isinstance(tool_result.data, (Order, Product, Promotion)):
+                    primary_tool_result = tool_result
                     break
-        
-        # If no primary business data found, use the last successful result
-        if not primary_business_data and successful_results:
-            primary_business_data = successful_results[-1]
-        
+
+        # If no primary business object found, use the last successful result
+        if not primary_tool_result and successful_tool_results:
+            primary_tool_result = successful_tool_results[-1]
+
         # Convert IntentType enum to string format expected by LLM client
         intent_mapping = {
             IntentType.ORDER_STATUS: "order_status",
-            IntentType.PRODUCT_INQUIRY: "product_inquiry", 
+            IntentType.PRODUCT_INQUIRY: "product_inquiry",
             IntentType.EARLY_RISERS_PROMOTION: "promotion_inquiry",
             IntentType.RETURN_REQUEST: "return_request",
             IntentType.COMPLAINT: "complaint",
@@ -437,23 +530,28 @@ class SierraAgent:
             IntentType.GENERAL_INQUIRY: "customer_service",
             IntentType.CUSTOMER_SERVICE: "customer_service"
         }
-        
-        plan_intent = getattr(plan, 'intent', IntentType.CUSTOMER_SERVICE)
+
+        plan_intent = getattr(plan, "intent", IntentType.CUSTOMER_SERVICE)
         intent_string = intent_mapping.get(plan_intent, "customer_service")
-        
-        # Build proper context that matches LLM client expectations
+
+        # NEW: Build conversational context using the Conversation class
+        conversational_context = self.conversation.build_conversational_context(
+            current_tool_results=successful_tool_results,
+            intent=intent_string
+        )
+
+        # Build context for LLM client with conversational context
         context = {
             "user_input": plan.customer_request,
             "customer_request": plan.customer_request,
-            "plan_results": successful_results,
-            "tool_results": primary_business_data,
-            "conversation_history": self.conversation.get_message_history(limit=5),
+            "primary_tool_result": primary_tool_result,  # Main ToolResult for response
+            "conversational_context": conversational_context,  # Rich conversation context
             "intent": intent_string,
             "sentiment": "neutral"  # Default sentiment
         }
-        
-        print(f"💭 [RESPONSE] Built context with keys: {list(context.keys())}")
-        
+
+        print(f"💭 [RESPONSE] Built context with conversational context: {len(conversational_context)} characters")
+
         # Use LLM to generate natural response
         response = self.tool_orchestrator.llm_client.generate_response(context)
         return response
@@ -462,7 +560,7 @@ class SierraAgent:
         """Create a simple fallback plan when plan generation fails."""
         import uuid
         from datetime import datetime
-        
+
         fallback_step = PlanStep(
             step_id=f"step_{uuid.uuid4().hex[:8]}",
             name="General Assistance",
@@ -470,7 +568,7 @@ class SierraAgent:
             tool_name="handle_general_inquiry",
             parameters={"user_input": user_input}
         )
-        
+
         return MultiTurnPlan(
             plan_id=f"fallback_{uuid.uuid4().hex[:8]}",
             intent=IntentType.GENERAL_INQUIRY,
@@ -485,7 +583,7 @@ class SierraAgent:
         # Use existing extraction logic from business tools
         email = self.tool_orchestrator.business_tools._extract_email(user_input)
         order_number = self.tool_orchestrator.business_tools._extract_order_number(user_input)
-        
+
         return {
             "email": email,
             "order_number": order_number,
@@ -496,7 +594,7 @@ class SierraAgent:
         """Analyze what products the customer is looking for."""
         preferences = self.tool_orchestrator.business_tools._extract_preferences(user_input)
         category = self.tool_orchestrator.business_tools._extract_product_category(user_input)
-        
+
         return {
             "preferences": preferences,
             "category": category,

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..ai.llm_client import LLMClient
-from ..data.data_types import IntentType
+from ..data.data_types import IntentType, ToolResult
 from .business_tools import BusinessTools
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ class ToolOrchestrator:
         self.available_tools = {
             "get_order_status": self.business_tools.get_order_status,
             "search_products": self.business_tools.search_products,
+            "get_product_details": self.business_tools.get_product_details,
             "get_product_recommendations": self.business_tools.get_product_recommendations,
             "get_early_risers_promotion": self.business_tools.get_early_risers_promotion,
             "get_company_info": self.business_tools.get_company_info,
@@ -78,23 +79,32 @@ class ToolOrchestrator:
             logger.error(f"Error creating LLM client: {e}")
             raise e
 
-    def execute_tool(self, tool_name: str, user_input: str) -> Any:
+    def execute_tool(self, tool_name: str, user_input: str) -> ToolResult:
         """Execute a specific tool by name for plan-based execution."""
         try:
             # Check if tool is available
             if tool_name not in self.available_tools:
                 available_tools = list(self.available_tools.keys())
-                raise ValueError(f"Tool '{tool_name}' not available. Available tools: {available_tools}")
+                return ToolResult(
+                    success=False,
+                    error=f"Tool '{tool_name}' not available. Available tools: {available_tools}",
+                    data=None
+                )
 
             # Execute the tool
             tool_method = self.available_tools[tool_name]
             result = tool_method(user_input)
-            
+
+            # All mapped tools return ToolResult objects
             return result
 
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")
-            return {"error": f"Tool execution failed: {e!s}", "success": False}
+            return ToolResult(
+                success=False,
+                error=f"Tool execution failed: {e!s}",
+                data=None
+            )
 
 
     def get_available_tools(self) -> List[str]:

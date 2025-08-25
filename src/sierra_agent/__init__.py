@@ -13,6 +13,6 @@ __version__ = "2.0.0"
 __all__ = [
     "AgentConfig",
     "Branding",
-    "ErrorMessages", 
+    "ErrorMessages",
     "SierraAgent",
 ]

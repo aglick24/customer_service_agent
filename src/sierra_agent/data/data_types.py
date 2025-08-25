@@ -64,6 +64,21 @@ class Order:
     status: str
     tracking_number: Optional[str] = None
 
+    def get_products(self, data_provider) -> List["Product"]:
+        """Get full product objects for this order."""
+        products = []
+        for sku in self.products_ordered:
+            product = data_provider.get_product_by_sku(sku)
+            if product:
+                products.append(product)
+        return products
+
+    def get_tracking_url(self) -> Optional[str]:
+        """Generate tracking URL if tracking number exists."""
+        if self.tracking_number:
+            return f"https://tools.usps.com/go/TrackConfirmAction?tLabels={self.tracking_number}"
+        return None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "CustomerName": self.customer_name,
@@ -182,3 +197,174 @@ class ConversationState:
             "start_time": self.start_time.isoformat(),
             "last_activity": self.last_activity.isoformat(),
         }
+
+
+@dataclass
+class Promotion:
+    """Promotion information."""
+    name: str
+    discount_percentage: int
+    valid_hours: str
+    discount_code: str
+    description: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "discount_percentage": self.discount_percentage,
+            "valid_hours": self.valid_hours,
+            "discount_code": self.discount_code,
+            "description": self.description,
+        }
+
+
+@dataclass
+class ToolResult:
+    """Simple, standardized container for tool results."""
+    data: Any
+    success: bool = True
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Standardized serialization for all tool results."""
+        if not self.success:
+            return {
+                "success": False,
+                "error": self.error,
+                "data": None
+            }
+
+        # Handle different data types consistently
+        if hasattr(self.data, "to_dict"):
+            serialized_data = self.data.to_dict()
+        elif isinstance(self.data, list):
+            serialized_data = [
+                item.to_dict() if hasattr(item, "to_dict") else item
+                for item in self.data
+            ]
+        elif isinstance(self.data, dict):
+            serialized_data = self.data
+        else:
+            serialized_data = self.data
+
+        return {
+            "success": True,
+            "error": None,
+            "data": serialized_data
+        }
+
+    def serialize_for_context(self) -> str:
+        """Serialize ToolResult data for LLM context with intelligent formatting and error handling."""
+        try:
+            if not self.success:
+                return f"Error: {self.error or 'Unknown error'}"
+
+            if not self.data:
+                return "No data available"
+
+            # Handle specific business object types with rich formatting
+            if isinstance(self.data, Order):
+                return self._format_order_for_context(self.data)
+            if isinstance(self.data, list) and len(self.data) > 0:
+                # Check if it's a list of Products
+                if all(isinstance(item, Product) for item in self.data):
+                    return self._format_products_for_context(self.data)
+                # Handle mixed or unknown list types
+                return self._format_mixed_list_for_context(self.data)
+            if isinstance(self.data, Product):
+                return self._format_product_for_context(self.data)
+            if isinstance(self.data, Promotion):
+                return self._format_promotion_for_context(self.data)
+            if isinstance(self.data, dict):
+                return self._format_dict_for_context(self.data)
+            # Fallback for any other data types
+            return self._safe_str_conversion(self.data)
+
+        except Exception as e:
+            # Robust error handling to prevent serialization crashes
+            return f"Serialization error: {str(e)[:100]}... (Data type: {type(self.data).__name__})"
+
+    def _format_order_for_context(self, order: "Order") -> str:
+        """Format Order object for LLM context."""
+        # Note: We'll need to pass data_provider for methods like get_products()
+        # For now, format core order data
+        return f"""Order Details:
+  Order Number: {order.order_number}
+  Customer: {order.customer_name}
+  Status: {order.status}
+  Products Ordered: {', '.join(order.products_ordered)}
+  Tracking: {order.tracking_number or 'Not available'}
+  Tracking URL: {order.get_tracking_url() or 'Not available'}"""
+
+    def _format_products_for_context(self, products: List["Product"]) -> str:
+        """Format Product list for LLM context."""
+        if not products:
+            return "No products found"
+
+        formatted_products = []
+        for product in products[:3]:  # Limit to 3 products to avoid context overflow
+            formatted_products.append(f"- {product.product_name} ({product.sku}): {product.description}")
+
+        suffix = f" (and {len(products) - 3} more)" if len(products) > 3 else ""
+        return "Products Found:\n" + "\n".join(formatted_products) + suffix
+
+    def _format_product_for_context(self, product: "Product") -> str:
+        """Format single Product for LLM context."""
+        return f"""Product Details:
+  Name: {product.product_name}
+  SKU: {product.sku}
+  Description: {product.description}
+  Inventory: {product.inventory}
+  Categories: {', '.join(product.tags)}"""
+
+    def _format_promotion_for_context(self, promotion: "Promotion") -> str:
+        """Format Promotion for LLM context."""
+        return f"""Promotion Details:
+  Name: {promotion.name}
+  Discount: {promotion.discount_percentage}%
+  Code: {promotion.discount_code}
+  Valid: {promotion.valid_hours}
+  Description: {promotion.description}"""
+
+    def _format_dict_for_context(self, data: Dict[str, Any]) -> str:
+        """Format dictionary data for LLM context."""
+        formatted_items = []
+        for key, value in data.items():
+            if isinstance(value, list) and len(value) > 3:
+                formatted_items.append(f"  {key}: {value[:3]} (and {len(value)-3} more)")
+            else:
+                formatted_items.append(f"  {key}: {value}")
+
+        return "\n".join(formatted_items)
+
+    def _format_mixed_list_for_context(self, data_list: List[Any]) -> str:
+        """Format mixed-type list for LLM context."""
+        try:
+            if not data_list:
+                return "Empty list"
+
+            formatted_items = []
+            for i, item in enumerate(data_list[:5]):  # Limit to 5 items
+                if hasattr(item, "to_dict"):
+                    formatted_items.append(f"Item {i+1}: {item.to_dict()}")
+                elif isinstance(item, dict):
+                    formatted_items.append(f"Item {i+1}: {item}")
+                else:
+                    formatted_items.append(f"Item {i+1}: {str(item)[:50]}")
+
+            suffix = f" (and {len(data_list) - 5} more items)" if len(data_list) > 5 else ""
+            return "List Items:\n" + "\n".join(formatted_items) + suffix
+
+        except Exception:
+            return f"Mixed list with {len(data_list)} items (formatting error)"
+
+    def _safe_str_conversion(self, data: Any) -> str:
+        """Safely convert any data to string for context."""
+        try:
+            str_data = str(data)
+            # Truncate very long strings
+            if len(str_data) > 500:
+                return str_data[:500] + "... (truncated)"
+            return str_data
+        except Exception:
+            return f"Data of type {type(data).__name__} (conversion error)"

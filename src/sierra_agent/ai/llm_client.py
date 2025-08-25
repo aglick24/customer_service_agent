@@ -16,7 +16,6 @@ from openai import OpenAI
 
 from ..data.data_types import (
     IntentType,
-    PlanStep,
 )
 
 # Load environment variables
@@ -80,23 +79,6 @@ class LLMClient:
         }
         logger.info(f"LLMClient initialized with model {model_name}")
 
-    def classify_intent(self, user_input: str) -> IntentType:
-        """Classify the user's intent from their input."""
-
-        try:
-            if self.api_key:
-                intent = self._classify_intent_with_openai(user_input)
-            else:
-                intent = self._classify_intent_mock(user_input)
-
-            self._update_usage_stats("intent_classification")
-            return intent
-
-        except Exception as e:
-            logger.error(f"Error classifying intent: {e}")
-
-            # Fallback to mock classification
-            return self._classify_intent_mock(user_input)
 
     def generate_response(self, context: Dict[str, Any]) -> str:
         """Generate a response based on the given context."""
@@ -113,96 +95,7 @@ class LLMClient:
             logger.error(f"Error generating response: {e}")
             raise e
 
-    def _classify_intent_with_openai(self, user_input: str) -> IntentType:
-        """Classify intent using OpenAI API."""
 
-        try:
-            if not self.client:
-                raise ValueError("OpenAI client not initialized")
-
-            prompt = f"""
-            Classify the customer's intent from the following message. Choose from these categories:
-            - ORDER_STATUS: Questions about order tracking, shipping, delivery
-            - PRODUCT_INQUIRY: Questions about products, recommendations, availability
-            - CUSTOMER_SERVICE: General customer service, policies, company info
-            - COMPLAINT: Complaints, issues, problems
-            - RETURN_REQUEST: Returns, refunds, exchanges
-            - SHIPPING_INFO: Shipping options, costs, tracking
-            - PROMOTION_INQUIRY: Sales, discounts, promotions
-            
-            Customer message: "{user_input}"
-            
-            Respond with only the intent category (e.g., ORDER_STATUS):
-            """
-
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,
-                temperature=0.1,
-            )
-
-            content = response.choices[0].message.content
-            if not content:
-                raise ValueError("Empty response from OpenAI")
-
-            intent_text = content.strip().upper()
-
-            # Map response to IntentType
-            intent_mapping = {
-                "ORDER_STATUS": IntentType.ORDER_STATUS,
-                "PRODUCT_INQUIRY": IntentType.PRODUCT_INQUIRY,
-                "CUSTOMER_SERVICE": IntentType.CUSTOMER_SERVICE,
-                "COMPLAINT": IntentType.COMPLAINT,
-                "RETURN_REQUEST": IntentType.RETURN_REQUEST,
-                "SHIPPING_INFO": IntentType.SHIPPING_INFO,
-                "PROMOTION_INQUIRY": IntentType.PROMOTION_INQUIRY,
-            }
-
-            if intent_text in intent_mapping:
-                return intent_mapping[intent_text]
-            return IntentType.CUSTOMER_SERVICE
-
-        except Exception as e:
-            print(f"❌ [LLM_CLIENT] OpenAI API error: {e}")
-            raise
-
-    def _classify_intent_mock(self, user_input: str) -> IntentType:
-        """Mock intent classification for testing."""
-
-        user_input_lower = user_input.lower()
-
-        # Simple keyword-based classification
-        if any(
-            word in user_input_lower
-            for word in ["order", "tracking", "shipping", "delivery"]
-        ):
-            intent = IntentType.ORDER_STATUS
-        elif any(
-            word in user_input_lower
-            for word in ["product", "hiking", "camping", "boots", "tent", "backpack"]
-        ):
-            intent = IntentType.PRODUCT_INQUIRY
-        elif any(word in user_input_lower for word in ["return", "refund", "exchange"]):
-            intent = IntentType.RETURN_REQUEST
-        elif any(
-            word in user_input_lower
-            for word in ["complaint", "problem", "issue", "broken", "wrong"]
-        ):
-            intent = IntentType.COMPLAINT
-        elif any(
-            word in user_input_lower for word in ["shipping", "delivery", "tracking"]
-        ):
-            intent = IntentType.SHIPPING_INFO
-        elif any(
-            word in user_input_lower
-            for word in ["sale", "discount", "promotion", "deal"]
-        ):
-            intent = IntentType.PROMOTION_INQUIRY
-        else:
-            intent = IntentType.CUSTOMER_SERVICE
-
-        return intent
 
     def _generate_response_with_openai(self, context: Dict[str, Any]) -> str:
         """Generate response using OpenAI API."""
@@ -278,35 +171,39 @@ class LLMClient:
         return response
 
     def _build_response_prompt(self, context: Dict[str, Any]) -> str:
-        """Build a prompt for response generation from context."""
-        print("📝 [LLM_CLIENT] Building response prompt from context...")
+        """Build a prompt for response generation from ToolResult context."""
+        print("📝 [LLM_CLIENT] Building response prompt from ToolResult context...")
 
         user_input = context.get("user_input", "")
         customer_request = context.get("customer_request", user_input)
         intent = context.get("intent", "customer_service")
-        sentiment = context.get("sentiment", "neutral")
-        tool_results = context.get("tool_results", {})
-        plan_results = context.get("plan_results", [])
-        conversation_history = context.get("conversation_history", [])
+        primary_tool_result = context.get("primary_tool_result")  # Main ToolResult
+        conversational_context = context.get("conversational_context", "")  # Rich conversation context
 
-        # Use tool_results which contains the consolidated business data
-        business_data = tool_results
-        
-        print(f"📝 [LLM_CLIENT] Business data available: {bool(business_data)}")
-        if business_data:
-            print(f"📝 [LLM_CLIENT] Business data keys: {list(business_data.keys()) if isinstance(business_data, dict) else 'Not a dict'}")
+        print(f"📝 [LLM_CLIENT] Primary tool result available: {primary_tool_result is not None}")
 
-        # Check if there was an error in the business data
+        # Check for errors and format the business data
         has_error = False
-        if isinstance(business_data, dict) and "error" in business_data:
-            has_error = True
-            print("📝 [LLM_CLIENT] Error detected in business data")
+        formatted_data = ""
 
-        # Format business data for better readability
-        if isinstance(business_data, dict):
-            formatted_data = "\n".join([f"  {key}: {value}" for key, value in business_data.items()])
+        if primary_tool_result:
+            if not primary_tool_result.success:
+                has_error = True
+                formatted_data = primary_tool_result.error
+                print("📝 [LLM_CLIENT] Error detected in primary tool result")
+            else:
+                # Use the intelligent serialization method
+                try:
+                    formatted_data = primary_tool_result.serialize_for_context()
+                    print(f"📝 [LLM_CLIENT] Formatted business data: {len(formatted_data)} characters")
+                except Exception as e:
+                    print(f"❌ [LLM_CLIENT] Error formatting tool result: {e}")
+                    formatted_data = f"Data formatting error: {e!s}"
+                    has_error = True
         else:
-            formatted_data = str(business_data)
+            has_error = True
+            formatted_data = "No business data available"
+            print("📝 [LLM_CLIENT] No primary tool result available")
 
         if has_error:
             prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
@@ -325,16 +222,20 @@ INSTRUCTIONS:
 
 Please write a helpful response addressing the issue:"""
         else:
+            # NEW: Use conversational context if available, otherwise use formatted data
+            context_data = conversational_context if conversational_context else formatted_data
+
             prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
 
 Customer's message: "{customer_request}"
 
-BUSINESS DATA RETRIEVED:
-{formatted_data}
+CONVERSATION CONTEXT:
+{context_data}
 
 INSTRUCTIONS:
-- You have successfully retrieved the customer's information above
-- Use this data to provide a specific, helpful response
+- You have access to current and previous conversation data above
+- Use this information to provide a specific, helpful response that references relevant context
+- If you see previous interactions, acknowledge them naturally ("As I mentioned earlier..." or "Following up on your order...")
 - If order data is available (order_number, status, products, tracking), provide complete order details
 - If promotion data is available (available, discount_code, message), explain the promotion status clearly
 - Be professional, friendly, and specific

@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ..data.data_types import IntentType
+from ..data.data_types import IntentType, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,9 @@ class Message:
     message_type: MessageType
     timestamp: datetime
     metadata: Dict[str, Any] = field(default_factory=dict)
+    tool_results: Optional[List[ToolResult]] = None  # Business data associated with this message
+    intent: Optional[str] = None  # Intent detected for this message
+    plan_id: Optional[str] = None  # Plan that generated this message (for AI messages)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary format."""
@@ -40,6 +43,9 @@ class Message:
             "message_type": self.message_type.value,
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata,
+            "tool_results": [tr.to_dict() for tr in self.tool_results] if self.tool_results else None,
+            "intent": self.intent,
+            "plan_id": self.plan_id,
         }
 
 
@@ -144,9 +150,97 @@ class Conversation:
 
         # Update conversation phase
         self._update_conversation_phase()
+
+    def add_ai_message_with_results(self, content: str, tool_results: List[ToolResult], intent: Optional[str] = None, plan_id: Optional[str] = None) -> None:
+        """Add an AI message with associated tool results and metadata."""
+        print(
+            f"🤖 [CONVERSATION] Adding AI message with {len(tool_results)} tool results: '{content[:30]}{'...' if len(content) > 30 else ''}'"
+        )
+
+        message = Message(
+            content=content,
+            message_type=MessageType.AI,
+            timestamp=datetime.now(),
+            tool_results=tool_results,
+            intent=intent,
+            plan_id=plan_id
+        )
+        self.messages.append(message)
+        self.last_activity = datetime.now()
+
+        # Update conversation phase
+        self._update_conversation_phase()
+
+        print(f"🤖 [CONVERSATION] Stored {len(tool_results)} tool results with message")
         print(
             f"🤖 [CONVERSATION] AI message added. Total messages: {len(self.messages)}"
         )
+
+    def get_previous_tool_results(self, result_type: type, limit: int = 3) -> List[ToolResult]:
+        """Get previous tool results of specific type (Order, Product, etc.)."""
+        print(f"🔍 [CONVERSATION] Looking for previous {result_type.__name__} results (limit: {limit})")
+
+        found_results = []
+        # Look through messages in reverse order (most recent first)
+        for message in reversed(self.messages):
+            if message.tool_results:
+                for tool_result in message.tool_results:
+                    if tool_result.success and isinstance(tool_result.data, result_type):
+                        found_results.append(tool_result)
+                        if len(found_results) >= limit:
+                            break
+            if len(found_results) >= limit:
+                break
+
+        print(f"🔍 [CONVERSATION] Found {len(found_results)} previous {result_type.__name__} results")
+        return found_results
+
+    def get_recent_messages_with_tool_results(self, limit: int = 2) -> List[Message]:
+        """Get recent messages that have tool results (for context building)."""
+        print(f"📋 [CONVERSATION] Getting recent messages with tool results (limit: {limit})")
+
+        messages_with_results = []
+        # Look through messages in reverse order
+        for message in reversed(self.messages):
+            if message.tool_results and message.message_type == MessageType.AI:
+                messages_with_results.append(message)
+                if len(messages_with_results) >= limit:
+                    break
+
+        # Return in chronological order
+        messages_with_results.reverse()
+        print(f"📋 [CONVERSATION] Found {len(messages_with_results)} recent messages with tool results")
+        return messages_with_results
+
+    def build_conversational_context(self, current_tool_results: List[ToolResult], intent: str) -> str:
+        """Build conversational context including current and recent tool results."""
+        print(f"🏗️ [CONVERSATION] Building conversational context for intent: {intent}")
+
+        context_parts = []
+
+        # Get recent messages with tool results (limit to 1 previous message to avoid context overflow)
+        recent_messages = self.get_recent_messages_with_tool_results(limit=1)
+
+        if recent_messages:
+            context_parts.append("PREVIOUS INTERACTION:")
+            for message in recent_messages:
+                # Format the tool results from the previous message
+                if message.tool_results:
+                    for tool_result in message.tool_results:
+                        formatted_result = tool_result.serialize_for_context()
+                        context_parts.append(f"Previously retrieved:\n{formatted_result}")
+            context_parts.append("")  # Add separator
+
+        # Add current tool results
+        if current_tool_results:
+            context_parts.append("CURRENT REQUEST DATA:")
+            for tool_result in current_tool_results:
+                formatted_result = tool_result.serialize_for_context()
+                context_parts.append(formatted_result)
+
+        full_context = "\n".join(context_parts)
+        print(f"🏗️ [CONVERSATION] Built context with {len(full_context)} characters")
+        return full_context
 
     def add_system_message(self, content: str) -> None:
         """Add a system message to the conversation."""
