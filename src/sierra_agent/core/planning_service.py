@@ -5,7 +5,6 @@ Handles intelligent plan generation and analysis for customer service requests.
 Extracted from SierraAgent to improve separation of concerns.
 """
 
-import json
 import logging
 import re
 import uuid
@@ -21,13 +20,11 @@ from ..data.data_types import (
 
 logger = logging.getLogger(__name__)
 
-
 class PlanningService:
     """Service responsible for analyzing requests and generating execution plans."""
 
     def __init__(self, llm_service=None, tool_orchestrator=None):
         """Initialize the planning service with unified LLM service."""
-        print("🎯 [PLANNING] Initializing planning service with unified LLM service...")
         
         # Store dependencies for intelligent planning
         self.llm_service = llm_service
@@ -38,18 +35,16 @@ class PlanningService:
             try:
                 from ..ai.llm_service import LLMService
                 self.llm_service = LLMService()
-                print("🎯 [PLANNING] Unified LLM service initialized for planning")
+                
             except Exception as e:
-                print(f"⚠️ [PLANNING] Could not initialize LLM service: {e}")
+                
                 self.llm_service = None
         
-        print("🎯 [PLANNING] Planning service initialized successfully")
         logger.info("PlanningService initialized with unified LLM service")
 
     def generate_plan(self, user_input: str, session_id: str = None, available_data: Dict[str, Any] = None) -> MultiTurnPlan:
         """Generate a comprehensive plan for handling the user request."""
-        print(f"🧠 [PLANNING] Generating plan for: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
-
+        
         try:
             # Analyze the request to determine what needs to be done
             plan_context = self._analyze_request(user_input)
@@ -76,18 +71,16 @@ class PlanningService:
                 }
             )
 
-            print(f"🧠 [PLANNING] Generated plan '{plan_id}' with {len(steps)} steps")
             return plan
 
         except Exception as e:
-            print(f"❌ [PLANNING] Error generating plan: {e}")
+            
             # Create a fallback plan
             return self._create_fallback_plan(user_input)
 
     def _analyze_request(self, user_input: str) -> Dict[str, Any]:
         """Analyze the user request to understand what needs to be done."""
-        print(f"🔍 [PLANNING] Analyzing request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
-
+        
         user_lower = user_input.lower()
         context: Dict[str, Any] = {"request_type": "general", "complexity": "simple"}
 
@@ -110,7 +103,6 @@ class PlanningService:
         if len(user_input.split()) > 20 or "and" in user_lower or "also" in user_lower:
             context["complexity"] = "complex"
 
-        print(f"🔍 [PLANNING] Request type: {context['request_type']}, complexity: {context['complexity']}")
         return context
 
     def _generate_plan_steps(self, user_input: str, context: Dict[str, Any], available_data: Dict[str, Any] = None) -> List[PlanStep]:
@@ -122,7 +114,7 @@ class PlanningService:
         if request_type == "order_status":
             # Check if we already have order data
             if "current_order" in available_data:
-                print(f"🔍 [PLANNING] Found existing order data, checking what user wants to know")
+                
                 user_lower = user_input.lower()
                 if any(word in user_lower for word in ["products", "items", "details", "specific"]):
                     # User wants product details for existing order
@@ -204,7 +196,6 @@ class PlanningService:
                 )
             )
 
-        print(f"🛠️ [PLANNING] Generated {len(steps)} plan steps for {request_type}")
         return steps
 
     def _create_fallback_plan(self, user_input: str) -> MultiTurnPlan:
@@ -226,35 +217,11 @@ class PlanningService:
             created_at=datetime.now()
         )
 
-    def should_use_planning(self, user_input: str) -> bool:
-        """Determine if a request needs full planning or can use reactive mode."""
-        # Simple heuristics for planning vs reactive mode
-        user_lower = user_input.lower()
-        
-        # Complex requests need planning
-        if len(user_input.split()) > 20:
-            return True
-            
-        # Multi-part requests need planning  
-        if any(word in user_lower for word in ["and", "also", "plus", "additionally"]):
-            return True
-            
-        # Complex business operations need planning
-        if any(phrase in user_lower for phrase in [
-            "check my order and", "order status and", "recommend and",
-            "search for products and", "promotion and"
-        ]):
-            return True
-            
-        # Simple single requests can be reactive
-        return False
-    
     def suggest_steps_with_llm(self, user_input: str, available_data: Dict[str, Any], conversation_context=None) -> List[str]:
         """Use unified LLM service to intelligently suggest required steps based on context."""
-        print(f"🤖 [PLANNING] Using unified LLM service to suggest steps for: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
         
         if not self.llm_service:
-            print("⚠️ [PLANNING] No LLM service available, falling back to rule-based planning")
+            
             return self.suggest_steps_rule_based(user_input, available_data)
         
         try:
@@ -272,17 +239,14 @@ class PlanningService:
                 conversation_context=conversation_context
             )
             
-            print(f"🤖 [PLANNING] Unified LLM service suggested {len(suggested_steps)} steps: {suggested_steps}")
             return suggested_steps
                 
         except Exception as e:
-            print(f"❌ [PLANNING] Error in unified LLM planning: {e}")
-            print("⚠️ [PLANNING] Falling back to rule-based planning")
+            
             return self.suggest_steps_rule_based(user_input, available_data)
     
     def suggest_steps_rule_based(self, user_input: str, available_data: Dict[str, Any]) -> List[str]:
         """Rule-based step suggestion as fallback."""
-        print(f"🔍 [PLANNING] Using rule-based planning for: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
         
         steps = []
         user_lower = user_input.lower()
@@ -318,145 +282,13 @@ class PlanningService:
         if not steps:
             steps.append("get_company_info")
             
-        print(f"🔍 [PLANNING] Rule-based planning suggested {len(steps)} steps: {steps}")
         return steps
     
-    def analyze_planning_context(self, user_input: str, conversation_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze conversation context to determine planning requirements."""
-        print(f"🧠 [PLANNING] Analyzing planning context for: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
-        
-        available_data = conversation_data.get("available_data", {})
-        request_analysis = self._analyze_user_request(user_input, available_data)
-        
-        # Choose planning method based on complexity and availability
-        use_llm = (
-            self.llm_client is not None and 
-            (len(available_data) > 0 or self._is_complex_request(user_input))
-        )
-        
-        if use_llm:
-            suggested_steps = self.suggest_steps_with_llm(user_input, available_data)
-        else:
-            suggested_steps = self.suggest_steps_rule_based(user_input, available_data)
-        
-        return {
-            "available_data": available_data,
-            "request_needs": request_analysis["needs"],
-            "references_previous": request_analysis["references_previous"],
-            "suggested_steps": suggested_steps,
-            "planning_method": "llm" if use_llm else "rule_based",
-            "conversation_context": conversation_data
-        }
-    
-    def _get_available_tools_description(self) -> str:
-        """Get description of available tools from the orchestrator."""
-        if not self.tool_orchestrator:
-            return "No tool orchestrator available - using default tools"
-        
-        try:
-            available_tools = self.tool_orchestrator.get_available_tools()
-            tool_descriptions = []
-            
-            # Map tool names to descriptions
-            tool_info = {
-                "get_order_status": "Look up order information by order number and email",
-                "search_products": "Find products matching customer criteria",
-                "get_product_details": "Get detailed information for specific products", 
-                "get_product_recommendations": "Find products similar to or related to existing ones",
-                "get_early_risers_promotion": "Check for available promotions and discounts",
-                "get_company_info": "Get general company information",
-                "get_contact_info": "Get contact information for customer service",
-                "get_policies": "Get information about company policies"
-            }
-            
-            for tool in available_tools:
-                if tool in tool_info:
-                    tool_descriptions.append(f"- {tool}: {tool_info[tool]}")
-                else:
-                    tool_descriptions.append(f"- {tool}: Available business tool")
-            
-            return "\n".join(tool_descriptions)
-            
-        except Exception as e:
-            print(f"⚠️ [PLANNING] Error getting tool descriptions: {e}")
-            return "Error retrieving available tools"
-    
-    def _get_available_tool_names(self) -> List[str]:
-        """Get list of available tool names."""
-        if not self.tool_orchestrator:
-            # Return default tools if no orchestrator
-            return ["get_order_status", "search_products", "get_product_details", 
-                   "get_product_recommendations", "get_early_risers_promotion", 
-                   "get_company_info", "get_contact_info", "get_policies"]
-        
-        try:
-            return self.tool_orchestrator.get_available_tools()
-        except Exception as e:
-            print(f"⚠️ [PLANNING] Error getting available tools: {e}")
-            return []
-    
-    def _format_available_data_for_llm(self, available_data: Dict[str, Any]) -> str:
-        """Format available data for LLM context."""
-        if not available_data:
-            return "No previous context available."
-        
-        formatted = []
-        for key, value in available_data.items():
-            if key == "current_order" and hasattr(value, 'order_number'):
-                formatted.append(f"- Current Order: {value.order_number} for {value.customer_name}")
-            elif key == "recent_products" and isinstance(value, list):
-                formatted.append(f"- Recent Products: {len(value)} products found")
-            else:
-                formatted.append(f"- {key}: {type(value).__name__} data available")
-        
-        return "\n".join(formatted) if formatted else "No specific context data."
-    
-    def _analyze_user_request(self, user_input: str, available_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze what the user is asking for."""
-        user_lower = user_input.lower()
-        needs = []
-        references_previous = False
-        
-        # Check for references to previous context
-        if any(ref in user_lower for ref in ["my order", "the order", "my", "that order"]):
-            references_previous = True
-            
-        # Determine what user needs
-        if any(word in user_lower for word in ["status", "tracking", "delivery", "shipped"]):
-            needs.append("order_status")
-        if any(word in user_lower for word in ["products", "items", "gear", "details"]):
-            needs.append("product_info")
-        if any(word in user_lower for word in ["related", "similar", "like", "recommend"]):
-            needs.append("related_products")
-        if any(word in user_lower for word in ["promotion", "discount", "code", "sale"]):
-            needs.append("promotion_info")
-            
-        return {
-            "needs": needs,
-            "references_previous": references_previous,
-            "user_input_lower": user_lower
-        }
-    
-    def _is_complex_request(self, user_input: str) -> bool:
-        """Determine if a request is complex enough to warrant LLM planning."""
-        user_lower = user_input.lower()
-        
-        # Complex indicators
-        complexity_indicators = [
-            len(user_input.split()) > 10,  # Long requests
-            any(word in user_lower for word in ["and", "but", "also", "plus"]),  # Multiple requests
-            any(word in user_lower for word in ["similar", "related", "like", "recommend"]),  # Relational requests
-            user_input.count("?") > 1,  # Multiple questions
-        ]
-        
-        return any(complexity_indicators)
-    
-    def update_plan_with_llm_service(self, plan: MultiTurnPlan, execution_results: List[ToolResult]) -> List[str]:
+    def update_plan_with_llm_service(self, plan: MultiTurnPlan, execution_results: List[ToolResult]) -> List[PlanStep]:
         """Update plan using unified LLM service based on execution results."""
-        print(f"🔄 [PLANNING] Updating plan using unified LLM service after {len(execution_results)} execution results")
         
         if not self.llm_service:
-            print("⚠️ [PLANNING] No LLM service available for plan updates")
+            
             return []
         
         # Quick check if request appears satisfied
@@ -467,7 +299,7 @@ class PlanningService:
         
         if (("order" in user_lower or "status" in user_lower) and has_order_data) or \
            (("product" in user_lower or "item" in user_lower) and (has_order_data or has_product_data)):
-            print("🔄 [PLANNING] Request appears satisfied with existing results")
+            
             return []
         
         try:
@@ -475,7 +307,7 @@ class PlanningService:
             remaining_steps = [step.tool_name for step in plan.steps if not step.is_completed]
             
             if not remaining_steps:
-                print("🔄 [PLANNING] No remaining steps, no updates needed")
+                
                 return []
             
             # Get available tools
@@ -490,11 +322,10 @@ class PlanningService:
                 available_tools=available_tools
             )
             
-            print(f"🔄 [PLANNING] Unified LLM service suggested {len(updated_steps)} updated steps: {updated_steps}")
             return updated_steps
                 
         except Exception as e:
-            print(f"❌ [PLANNING] Error updating plan: {e}")
+            
             return []
     
     def _format_execution_results(self, results: List[ToolResult]) -> str:

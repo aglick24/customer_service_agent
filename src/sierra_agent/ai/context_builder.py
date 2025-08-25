@@ -8,19 +8,17 @@ consolidating the scattered context assembly logic into a clean, maintainable sy
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from ..data.data_types import ToolResult, Order, Product, Promotion, MultiTurnPlan
 
 logger = logging.getLogger(__name__)
-
 
 class ContextType(Enum):
     """Types of LLM contexts we support."""
     CUSTOMER_SERVICE = "customer_service"  # Main customer response generation
     PLANNING = "planning"  # Tool selection and planning
     PLAN_UPDATE = "plan_update"  # Dynamic plan modification
-
 
 @dataclass
 class MinimalHistoryItem:
@@ -30,14 +28,12 @@ class MinimalHistoryItem:
     identifiers: Dict[str, str]  # key-value pairs of important identifiers
     interaction_type: str  # order_lookup, product_search, etc.
 
-
 @dataclass
 class BaseContext:
     """Base context with common fields."""
     user_input: str
     context_type: ContextType
     timestamp: str = field(default_factory=lambda: __import__('datetime').datetime.now().isoformat())
-
 
 @dataclass
 class CustomerServiceContext(BaseContext):
@@ -49,13 +45,7 @@ class CustomerServiceContext(BaseContext):
     primary_result: Optional[ToolResult] = None
     
     # Conversation context
-    request_type: str = "general"
-    conversation_phase: str = "greeting"
-    customer_sentiment: str = "neutral"
-    
-    # Minimal conversation history
-    recent_history: List[MinimalHistoryItem] = field(default_factory=list)
-
+    conversation_context: Any = None  # The actual conversation context object
 
 @dataclass
 class PlanningContext(BaseContext):
@@ -76,7 +66,6 @@ class PlanningContext(BaseContext):
     # Minimal history for context-aware planning
     recent_history: List[MinimalHistoryItem] = field(default_factory=list)
 
-
 @dataclass
 class PlanUpdateContext(BaseContext):
     """Context for updating plans based on execution results."""
@@ -88,46 +77,34 @@ class PlanUpdateContext(BaseContext):
     remaining_steps: List[str] = field(default_factory=list)
     available_tools: List[str] = field(default_factory=list)
 
-
 class ContextBuilder:
     """Unified context builder for all LLM interactions."""
     
     def __init__(self):
         """Initialize context builder."""
-        print("🏗️ [CONTEXT_BUILDER] Initializing unified context builder...")
+        
         logger.info("ContextBuilder initialized")
     
     def build_customer_service_context(
         self,
         user_input: str,
         tool_results: List[ToolResult] = None,
-        request_type: str = "general",
-        conversation_phase: str = "greeting", 
-        customer_sentiment: str = "neutral",
         conversation_context=None
     ) -> CustomerServiceContext:
         """Build strongly-typed context for customer service responses."""
-        print(f"🏗️ [CONTEXT_BUILDER] Building customer service context for: '{user_input[:30]}...'")
         
         tool_results = tool_results or []
         
         # Find primary result (prioritize business objects over dicts)
         primary_result = self._find_primary_tool_result(tool_results)
         
-        # Extract minimal history with preserved identifiers
-        recent_history = self._extract_minimal_history(conversation_context, limit=2)
-        
         context = CustomerServiceContext(
             user_input=user_input,
             tool_results=tool_results,
             primary_result=primary_result,
-            request_type=request_type,
-            conversation_phase=conversation_phase,
-            customer_sentiment=customer_sentiment,
-            recent_history=recent_history
+            conversation_context=conversation_context
         )
         
-        print(f"🏗️ [CONTEXT_BUILDER] Built context with {len(tool_results)} tool results, {len(recent_history)} history items")
         return context
     
     def build_planning_context(
@@ -141,7 +118,6 @@ class ContextBuilder:
         conversation_context=None
     ) -> PlanningContext:
         """Build strongly-typed context for planning."""
-        print(f"🏗️ [CONTEXT_BUILDER] Building planning context for: '{user_input[:30]}...'")
         
         # Extract minimal history for context-aware planning
         recent_history = self._extract_minimal_history(conversation_context, limit=2)
@@ -156,7 +132,6 @@ class ContextBuilder:
             recent_history=recent_history
         )
         
-        print(f"🏗️ [CONTEXT_BUILDER] Built planning context with {len(context.available_data)} data items, {len(recent_history)} history items")
         return context
     
     def build_plan_update_context(
@@ -168,7 +143,6 @@ class ContextBuilder:
         available_tools: List[str] = None
     ) -> PlanUpdateContext:
         """Build strongly-typed context for plan updates."""
-        print(f"🏗️ [CONTEXT_BUILDER] Building plan update context for plan: {original_plan.plan_id}")
         
         context = PlanUpdateContext(
             user_input=user_input,
@@ -178,15 +152,12 @@ class ContextBuilder:
             available_tools=available_tools or []
         )
         
-        print(f"🏗️ [CONTEXT_BUILDER] Built plan update context with {len(execution_results)} results")
         return context
     
     def _extract_minimal_history(self, conversation_context, limit: int = 2) -> List[MinimalHistoryItem]:
         """Extract minimal conversation history with preserved identifiers."""
         if not conversation_context:
             return []
-        
-        print(f"🔍 [CONTEXT_BUILDER] Extracting minimal history (limit: {limit})")
         
         try:
             # Get recent messages with tool results
@@ -216,11 +187,10 @@ class ContextBuilder:
                             
                             history_items.append(history_item)
             
-            print(f"🔍 [CONTEXT_BUILDER] Extracted {len(history_items)} minimal history items")
             return history_items[-limit:] if len(history_items) > limit else history_items
             
         except Exception as e:
-            print(f"⚠️ [CONTEXT_BUILDER] Error extracting history: {e}")
+            
             return []
     
     def _summarize_tool_result_with_identifiers(self, tool_result: ToolResult) -> tuple[str, Dict[str, str], str]:
@@ -303,53 +273,50 @@ class ContextBuilder:
         if not tool_results:
             return None
         
+        # First check for failed results - they are often the most important for user communication
+        for result in tool_results:
+            if not result.success and result.error:
+                # Failed business operations are high priority for user communication
+                return result
+        
         # Prioritize business objects over generic dicts
         business_object_types = (Order, Product, Promotion)
         
         for result in tool_results:
             if result.success and result.data:
                 if isinstance(result.data, business_object_types):
-                    print(f"🏗️ [CONTEXT_BUILDER] Found primary business object: {type(result.data).__name__}")
                     return result
                 elif isinstance(result.data, list) and result.data:
                     if isinstance(result.data[0], business_object_types):
-                        print(f"🏗️ [CONTEXT_BUILDER] Found primary business object list: {type(result.data[0]).__name__}")
                         return result
         
         # Fall back to last successful result
         for result in reversed(tool_results):
             if result.success and result.data:
-                print(f"🏗️ [CONTEXT_BUILDER] Using fallback primary result: {type(result.data).__name__}")
+                
                 return result
         
         return None
-
 
 class LLMPromptBuilder:
     """Builds LLM prompts from strongly-typed contexts."""
     
     def __init__(self):
         """Initialize prompt builder."""
-        print("📝 [PROMPT_BUILDER] Initializing LLM prompt builder...")
-    
+        
     def build_customer_service_prompt(self, context: CustomerServiceContext) -> str:
         """Build customer service prompt from context."""
-        print(f"📝 [PROMPT_BUILDER] Building customer service prompt for: {context.request_type}")
         
         # Format business data using existing serialization
         business_data = self._format_business_data(context.tool_results, context.primary_result)
         
-        # Format minimal conversation history with identifiers
-        history_context = self._format_minimal_history(context.recent_history)
+        # Format conversation summary
+        history_context = self._format_conversation_summary(context.conversation_context)
         
         # Construct prompt with clear structure
         prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
 
 {history_context}Current Customer Request: "{context.user_input}"
-
-Request Type: {context.request_type}
-Conversation Phase: {context.conversation_phase}
-Customer Sentiment: {context.customer_sentiment}
 
 Current Business Data:
 {business_data}
@@ -357,17 +324,14 @@ Current Business Data:
 Instructions:
 - Provide a helpful, professional response using the business data above
 - Reference specific identifiers (order numbers, SKUs, names) when relevant
-- Match the customer's sentiment and conversation phase
 - Be specific and include relevant details from the data
 - If referencing previous interactions, use the exact identifiers provided
-- Sign as "Sierra Outfitters Customer Service Team"
 - If no relevant data is available, explain what information you need"""
 
         return prompt
     
     def build_planning_prompt(self, context: PlanningContext) -> str:
         """Build planning prompt from context."""
-        print(f"📝 [PROMPT_BUILDER] Building planning prompt with {len(context.available_tools)} tools")
         
         # Format available data summary
         data_summary = self._format_available_data_summary(context.available_data)
@@ -407,7 +371,6 @@ Respond with ONLY a JSON array of tool names from the available tools list, no o
     
     def build_plan_update_prompt(self, context: PlanUpdateContext) -> str:
         """Build plan update prompt from context."""
-        print(f"📝 [PROMPT_BUILDER] Building plan update prompt for plan: {context.original_plan.plan_id}")
         
         # Format execution results
         execution_summary = self._format_execution_results(context.execution_results)
@@ -418,7 +381,7 @@ Respond with ONLY a JSON array of tool names from the available tools list, no o
         prompt = f"""You are updating a customer service plan based on execution results.
 
 Original Request: "{context.user_input}"
-Plan ID: {context.original_plan.plan_id}
+Plan ID: {context.original_plan.plan_id if context.original_plan else "no_plan"}
 
 Execution Results So Far:
 {execution_summary}
@@ -463,6 +426,36 @@ Respond with ONLY a JSON array of tool names for the next steps:
         
         return "\n".join(formatted) + "\n\n"
     
+    def _format_conversation_summary(self, conversation_context) -> str:
+        """Generate a simple formatted conversation summary for the prompt."""
+        if not conversation_context or not hasattr(conversation_context, 'get_available_data'):
+            return ""
+        
+        available_data = conversation_context.get_available_data()
+        if not available_data:
+            return ""
+        
+        summary_parts = []
+        
+        # Add order context if available
+        if "current_order" in available_data:
+            order = available_data["current_order"]
+            summary_parts.append(f"Previous: User asked about order {order.order_number} for {order.email}")
+            summary_parts.append(f"Response: Found order for {order.customer_name}, status={order.status}, products={', '.join(order.products_ordered)}")
+        
+        # Add product search context if available  
+        if "recent_products" in available_data:
+            products = available_data["recent_products"]
+            if products:
+                product_names = [p.product_name for p in products[:2] if hasattr(p, 'product_name')]
+                summary_parts.append(f"Previous: User searched for products")
+                summary_parts.append(f"Response: Found products including {', '.join(product_names)}")
+        
+        if summary_parts:
+            return "Recent Context:\n- " + "\n- ".join(summary_parts) + "\n\n"
+        else:
+            return ""
+    
     def _format_minimal_history_for_planning(self, history_items: List[MinimalHistoryItem]) -> str:
         """Format minimal history for planning context."""
         if not history_items:
@@ -490,16 +483,25 @@ Respond with ONLY a JSON array of tool names for the next steps:
             return "No business data available."
         
         if primary_result:
-            # Use the excellent existing serialization
-            return primary_result.serialize_for_context()
+            if primary_result.success:
+                # Use the excellent existing serialization
+                return primary_result.serialize_for_context()
+            else:
+                # Handle failed primary result
+                error_msg = primary_result.error if primary_result.error else "Operation failed"
+                return f"ERROR: {error_msg}"
         
-        # Format multiple results
+        # Format multiple results (both successful and failed)
         formatted_results = []
         for i, result in enumerate(tool_results, 1):
             if result.success:
                 formatted_results.append(f"Result {i}:\n{result.serialize_for_context()}")
+            else:
+                # Include failed results with error information
+                error_msg = result.error if result.error else "Operation failed"
+                formatted_results.append(f"Result {i} (FAILED):\n{error_msg}")
         
-        return "\n\n".join(formatted_results) if formatted_results else "No successful results available."
+        return "\n\n".join(formatted_results) if formatted_results else "No results available."
     
     def _format_available_data_summary(self, available_data: Dict[str, Any]) -> str:
         """Format available data for planning context."""

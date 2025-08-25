@@ -12,7 +12,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-
 class PlanStatus(Enum):
     """Status of plan execution."""
     PENDING = "PENDING"
@@ -20,7 +19,6 @@ class PlanStatus(Enum):
     WAITING_FOR_INPUT = "WAITING_FOR_INPUT"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
-
 
 @dataclass
 class Product:
@@ -39,7 +37,6 @@ class Product:
             "Description": self.description,
             "Tags": self.tags,
         }
-
 
 @dataclass
 class Order:
@@ -88,7 +85,6 @@ class Order:
             "TrackingNumber": self.tracking_number,
         }
 
-
 @dataclass
 class PlanStep:
     """A single step in a multi-turn plan."""
@@ -114,7 +110,6 @@ class PlanStep:
             "is_completed": self.is_completed,
             "result": self.result,
         }
-
 
 @dataclass
 class MultiTurnPlan:
@@ -159,7 +154,7 @@ class MultiTurnPlan:
             print(f"         Tool: {step.tool_name}")
             print(f"         Description: {step.description}")
         print()
-
+        
     def to_dict(self) -> Dict[str, Any]:
         return {
             "plan_id": self.plan_id,
@@ -172,7 +167,6 @@ class MultiTurnPlan:
             "max_turns": self.max_turns,
             "current_turn": self.current_turn,
         }
-
 
 @dataclass
 class ConversationState:
@@ -198,7 +192,6 @@ class ConversationState:
             "last_activity": self.last_activity.isoformat(),
         }
 
-
 @dataclass
 class Promotion:
     """Promotion information."""
@@ -216,7 +209,6 @@ class Promotion:
             "discount_code": self.discount_code,
             "description": self.description,
         }
-
 
 @dataclass
 class ToolResult:

@@ -20,14 +20,12 @@ from .data_types import Order, Product, Promotion
 
 logger = logging.getLogger(__name__)
 
-
 class DataProvider:
     """Centralized data provider for Sierra Outfitters business operations."""
 
     def __init__(self, data_dir: str = "data") -> None:
         """Initialize the data provider with data directory."""
-        print("📊 [DATA_PROVIDER] Initializing DataProvider...")
-
+        
         self.data_dir = data_dir
         self.customer_orders: List[Dict[str, Any]] = []
         self.product_catalog: List[Dict[str, Any]] = []
@@ -36,7 +34,6 @@ class DataProvider:
         self._load_customer_orders()
         self._load_product_catalog()
 
-        print("✅ [DATA_PROVIDER] DataProvider initialized successfully")
         logger.info("DataProvider initialized")
 
     def _load_customer_orders(self) -> None:
@@ -47,12 +44,12 @@ class DataProvider:
             if os.path.exists(orders_file):
                 with open(orders_file) as f:
                     self.customer_orders = json.load(f)
-                print(f"📦 [DATA_PROVIDER] Loaded {len(self.customer_orders)} customer orders")
+                
             else:
-                print(f"⚠️ [DATA_PROVIDER] Customer orders file not found: {orders_file}")
+                
                 self.customer_orders = []
         except Exception as e:
-            print(f"❌ [DATA_PROVIDER] Error loading customer orders: {e}")
+            
             logger.error(f"Error loading customer orders: {e}")
             self.customer_orders = []
 
@@ -64,12 +61,12 @@ class DataProvider:
             if os.path.exists(catalog_file):
                 with open(catalog_file) as f:
                     self.product_catalog = json.load(f)
-                print(f"🏷️ [DATA_PROVIDER] Loaded {len(self.product_catalog)} products")
+                
             else:
-                print(f"⚠️ [DATA_PROVIDER] Product catalog file not found: {catalog_file}")
+                
                 self.product_catalog = []
         except Exception as e:
-            print(f"❌ [DATA_PROVIDER] Error loading product catalog: {e}")
+            
             logger.error(f"Error loading product catalog: {e}")
             self.product_catalog = []
 
@@ -84,8 +81,7 @@ class DataProvider:
         Returns:
             Order object or None if not found
         """
-        print(f"🔍 [DATA_PROVIDER] Looking up order: {order_number} for {email}")
-
+        
         for order_data in self.customer_orders:
             if (order_data["Email"].lower() == email.lower() and
                 order_data["OrderNumber"].lower() == order_number.lower()):
@@ -99,10 +95,8 @@ class DataProvider:
                     tracking_number=order_data.get("TrackingNumber")
                 )
 
-                print(f"✅ [DATA_PROVIDER] Found order: {order_number}")
                 return order
 
-        print(f"❌ [DATA_PROVIDER] Order not found: {order_number} for {email}")
         return None
 
     def get_product_by_sku(self, sku: str) -> Optional[Product]:
@@ -129,8 +123,7 @@ class DataProvider:
         Returns:
             List of matching Product objects
         """
-        print(f"🔍 [DATA_PROVIDER] Searching products: '{query}' category: {category}")
-
+        
         query_lower = query.lower()
         query_words = query_lower.split()
         scored_results = []
@@ -179,13 +172,11 @@ class DataProvider:
         scored_results.sort(key=lambda x: x[0], reverse=True)
         results = [product for score, product in scored_results]
 
-        print(f"✅ [DATA_PROVIDER] Found {len(results)} matching products")
         return results
 
     def get_products_by_category(self, category: str) -> List[Product]:
         """Get all products in a specific category."""
-        print(f"🏷️ [DATA_PROVIDER] Getting products for category: {category}")
-
+        
         results = []
         category_lower = category.lower()
 
@@ -200,7 +191,6 @@ class DataProvider:
                 )
                 results.append(product)
 
-        print(f"✅ [DATA_PROVIDER] Found {len(results)} products in category: {category}")
         return results
 
     def is_early_risers_time(self) -> bool:
@@ -220,7 +210,6 @@ class DataProvider:
 
         is_valid = start_time <= current_time <= end_time
 
-        print(f"⏰ [DATA_PROVIDER] Early Risers check: {current_time.strftime('%H:%M')} PT - {'✅ Valid' if is_valid else '❌ Invalid'}")
         return is_valid
 
     def generate_discount_code(self) -> str:
@@ -232,7 +221,7 @@ class DataProvider:
         """
         # Generate a random 8-character code
         code = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        print(f"🎫 [DATA_PROVIDER] Generated discount code: {code}")
+        
         return code
 
     def get_early_risers_promotion(self) -> Optional[Promotion]:
@@ -255,5 +244,4 @@ class DataProvider:
             description="Get 10% off your purchase during early morning hours!"
         )
 
-        print(f"🎉 [DATA_PROVIDER] Early Risers promotion active: {discount_code}")
         return promotion

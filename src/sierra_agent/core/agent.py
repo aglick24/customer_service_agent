@@ -27,7 +27,6 @@ from ..tools.tool_orchestrator import ToolOrchestrator
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class AgentConfig:
     """Configuration for the Sierra Agent."""
@@ -41,7 +40,6 @@ class AgentConfig:
     thinking_model: str = "gpt-4o"  # For complex reasoning and planning
     low_latency_model: str = "gpt-4o-mini"  # For fast responses and simple tasks
     enable_dual_llm: bool = True  # Whether to use dual LLM setup
-
 
 class SierraAgent:
     """Base AI Agent for Sierra Outfitters customer service."""
@@ -82,11 +80,9 @@ class SierraAgent:
 
     def start_conversation(self) -> str:
         """Start a new conversation session."""
-        print("🚀 [AGENT] Starting new conversation session...")
 
         # Generate session ID
         self.session_id = f"session_{int(time.time())}"
-        print(f"🚀 [AGENT] Generated session ID: {self.session_id}")
 
         # Reset interaction counter
         self.interaction_count = 0
@@ -98,19 +94,12 @@ class SierraAgent:
         self.conversation.add_system_message(f"Session {self.session_id} started")
 
         logger.info(f"Started conversation session {self.session_id}")
-        print(f"✅ [AGENT] Conversation session {self.session_id} started successfully")
 
         return self.session_id
 
     def process_user_input(self, user_input: str) -> str:
         """Process user input and generate response."""
-        print(
-            f"\n👤 [AGENT] Processing user input: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'"
-        )
-        print(
-            f"👤 [AGENT] Session: {self.session_id}, Interaction: {self.interaction_count + 1}"
-        )
-
+        
         try:
             # Add user message to conversation
             self.conversation.add_user_message(user_input)
@@ -122,14 +111,12 @@ class SierraAgent:
 
             # Generate plan for user request
             plan = self._generate_plan(user_input)
-            print(f"🧠 [AGENT] Generated plan: {plan.plan_id}")
 
             # Print the plan in readable format
             plan.print_plan()
 
             # Execute plan steps
             execution_results = self._execute_plan(plan)
-            print(f"🛠️ [AGENT] Plan execution completed. Status: {plan.status}")
 
             # Simplified - no complex continuation or context extraction logic
 
@@ -166,7 +153,6 @@ class SierraAgent:
             return response
 
         except Exception as e:
-            print(f"❌ [AGENT] Error processing user input: {e}")
             logger.error(f"Error processing user input: {e}")
 
             # Generate fallback response
@@ -179,7 +165,6 @@ class SierraAgent:
 
     def _generate_plan(self, user_input: str) -> MultiTurnPlan:
         """Generate a comprehensive plan for handling the user request."""
-        print(f"🧠 [PLAN] Generating plan for: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
 
         try:
             # Get conversation data for planning context
@@ -196,11 +181,9 @@ class SierraAgent:
             assert isinstance(available_data, dict), "available_data should be a dict"
             plan = self.planning_service.generate_plan(user_input, session_id=self.session_id, available_data=available_data)
 
-            print(f"🧠 [PLAN] Generated plan '{plan.plan_id}' with {len(plan.steps)} steps")
             return plan
 
         except Exception as e:
-            print(f"❌ [PLAN] Error generating plan: {e}")
             # Use PlanningService fallback plan generation
             fallback_step = PlanStep(
                 step_id=f"step_{uuid.uuid4().hex[:8]}",
@@ -222,25 +205,19 @@ class SierraAgent:
                 created_at=datetime.now()
             )
 
-
-
     def _execute_plan(self, plan: MultiTurnPlan) -> Dict[str, Any]:
         """Execute all steps in the plan."""
-        print(f"🚀 [EXECUTION] Executing plan '{plan.plan_id}' with {len(plan.steps)} steps")
 
         plan.status = PlanStatus.IN_PROGRESS
         execution_results: Dict[str, Any] = {"steps": [], "overall_success": True}
 
         # NEW: Progressive context accumulation during execution
         execution_context = plan.conversation_context.copy()
-        print(f"🧠 [EXECUTION] Starting with base context: {list(execution_context.keys())}")
 
         # NEW: Execute steps in dependency order
         execution_order = self._resolve_step_dependencies(plan.steps)
-        print(f"🔗 [EXECUTION] Dependency-resolved execution order: {[step.name for step in execution_order]}")
 
         for step in execution_order:
-            print(f"🔧 [EXECUTION] Executing step: {step.name}")
 
             try:
                 # Gather data from dependency steps
@@ -266,7 +243,6 @@ class SierraAgent:
                                 execution_context["found_products"] = result.data
                     
                     status_msg = "(success)" if result.success else "(failed)"
-                    print(f"🧠 [EXECUTION] Updated context with {step_context_key} {status_msg}, total keys: {len(execution_context)}")
 
                 execution_results["steps"].append({
                     "step_id": step.step_id,
@@ -276,8 +252,6 @@ class SierraAgent:
                     "result": result
                 })
 
-                print(f"✅ [EXECUTION] Step '{step.name}' completed successfully")
-                
                 # Update plan using unified LLM service after each step
                 completed_results = [step_result["result"] for step_result in execution_results["steps"] 
                                    if isinstance(step_result.get("result"), ToolResult)]
@@ -286,6 +260,7 @@ class SierraAgent:
                         plan, completed_results
                     )
                     if updated_steps:
+                        plan.steps = updated_steps
                         print(f"🔄 [EXECUTION] Plan updated with {len(updated_steps)} new suggested steps: {updated_steps}")
 
             except Exception as e:
@@ -297,9 +272,9 @@ class SierraAgent:
                 if isinstance(step.result, dict) and "error" in step.result:
                     step_context_key = f"step_{step.step_id}_result"
                     execution_context[step_context_key] = step.result
-                    print(f"🧠 [EXECUTION] Updated context with failed step {step_context_key}, total keys: {len(execution_context)}")
                 else:
-                    print(f"🧠 [EXECUTION] Not updating context due to step execution failure")
+                    step_context_key = f"step_{step.step_id}_result"
+                    execution_context[step_context_key] = step.result
 
                 execution_results["steps"].append({
                     "step_id": step.step_id,
@@ -313,13 +288,10 @@ class SierraAgent:
         plan.status = PlanStatus.COMPLETED if execution_results["overall_success"] else PlanStatus.FAILED
         plan.conversation_context = execution_context  # Store accumulated context back to plan
 
-        print(f"🏁 [EXECUTION] Plan execution completed. Status: {plan.status}")
-        print(f"🧠 [EXECUTION] Final context keys: {list(execution_context.keys())}")
         return execution_results
 
     def _execute_plan_step(self, step: PlanStep, context: Dict[str, Any], dependency_data: Optional[Dict[str, Any]] = None) -> ToolResult:
         """Execute a single plan step."""
-        print(f"⚙️ [STEP] Executing: {step.tool_name}")
 
         # Handle special analysis steps - convert to ToolResult format
         if step.tool_name == "extract_order_info":
@@ -347,24 +319,141 @@ class SierraAgent:
         }
 
         if step.tool_name in tool_mapping:
-            # Use the original user input for tool execution
-            original_input = (
-                step.parameters.get("user_input") or 
-                context.get("execution", {}).get("original_request", "") or
-                context.get("original_request", "")
-            )
-            if not original_input:
-                print(f"⚠️ [STEP] No user input found for {step.tool_name}, available context keys: {list(context.keys())}")
-            return self.tool_orchestrator.execute_tool(step.tool_name, original_input, conversation_context=self.conversation)
+            # Extract typed parameters for the tool
+            tool_params = self._extract_tool_parameters(step.tool_name, context)
+            
+            if tool_params is None:
+                return ToolResult(success=False, error="Missing required parameters", data=None)
+            return self.tool_orchestrator.execute_tool(step.tool_name, **tool_params)
         return ToolResult(
             success=False,
             error=f"Unknown tool: {step.tool_name}",
             data=None
         )
 
+    def _extract_tool_parameters(self, tool_name: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract typed parameters for a specific tool from context."""
+        
+        # Get original user request
+        original_request = (
+            context.get("execution", {}).get("original_request", "") or
+            context.get("original_request", "")
+        )
+        
+        if tool_name == "get_order_status":
+            # Extract email and order number from original request
+            email = self._extract_email(original_request)
+            order_number = self._extract_order_number(original_request)
+            if email and order_number:
+                return {"email": email, "order_number": order_number}
+            return None
+            
+        elif tool_name == "search_products":
+            # Use original request as search query
+            if original_request:
+                return {"query": original_request}
+            return None
+            
+        elif tool_name == "get_product_details":
+            # First try to get SKUs from conversation context
+            available_data = self.conversation.get_available_data()
+            if "current_order" in available_data:
+                current_order = available_data["current_order"]
+                if hasattr(current_order, 'products_ordered') and current_order.products_ordered:
+                    return {"skus": current_order.products_ordered}
+            
+            # Fallback: try to extract SKU from original request
+            product_sku = self._extract_product_id(original_request)
+            if product_sku:
+                return {"skus": [product_sku]}
+            return None
+            
+        elif tool_name == "get_product_recommendations":
+            # Extract category and preferences from original request
+            category = self._extract_product_category(original_request)
+            preferences = self._extract_preferences(original_request)
+            return {"category": category, "preferences": preferences if preferences else None}
+            
+        elif tool_name in ["get_company_info", "get_contact_info", "get_policies", "get_early_risers_promotion"]:
+            # These tools don't need parameters
+            return {}
+            
+        return None
+
+    def _extract_email(self, text: str) -> Optional[str]:
+        """Extract email address from text."""
+        import re
+        email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+        match = re.search(email_pattern, text)
+        return match.group(0) if match else None
+
+    def _extract_order_number(self, text: str) -> Optional[str]:
+        """Extract order number from text."""
+        import re
+        patterns = [
+            r"#\s*W\s*\d+",           # #W001, # W001, #W 001
+            r"\bW\s*-?\s*\d+\b",      # W001, W-001, W 001 (with word boundaries)
+            r"order\s+#?\s*W\s*-?\s*\d+",  # Order W001, order #W001, order W-001
+            r"order\s+number\s+#?\s*W\s*-?\s*\d+",  # order number W001
+            r"my\s+order\s+#?\s*W\s*-?\s*\d+",      # my order W001
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                order_text = match.group(0)
+                w_match = re.search(r"W\s*-?\s*(\d+)", order_text, re.IGNORECASE)
+                if w_match:
+                    number_part = w_match.group(1)
+                    return f"#W{number_part.zfill(3)}"
+        return None
+
+    def _extract_product_id(self, text: str) -> Optional[str]:
+        """Extract product ID from text."""
+        import re
+        patterns = [r"PROD\d+", r"Product\s+(\d+)"]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1) if len(match.groups()) > 0 else match.group(0)
+        return None
+
+    def _extract_product_category(self, text: str) -> Optional[str]:
+        """Extract product category from text."""
+        text_lower = text.lower()
+        categories = [
+            "backpack", "hiking", "adventure", "outdoor gear",
+            "skis", "snow", "winter", "high-tech", "trail", "comfort",
+            "food & beverage", "weatherproof", "versatile", "explorer",
+            "rugged design", "trailblazing", "personal flight", "safety-enhanced",
+            "stealth", "discretion", "advanced cloaking", "fashion", "lifestyle",
+            "teleportation", "transport", "home decor", "lighting", "modern design",
+            "luxury", "interior style"
+        ]
+        
+        for category in categories:
+            if category in text_lower:
+                return category
+        return None
+
+    def _extract_preferences(self, text: str) -> List[str]:
+        """Extract customer preferences from text."""
+        text_lower = text.lower()
+        preferences = []
+        preference_keywords = [
+            "hiking", "camping", "adventure", "outdoor", "winter", "summer",
+            "comfort", "luxury", "budget", "premium", "lightweight", "durable",
+            "waterproof", "high-tech", "traditional", "modern", "classic"
+        ]
+        
+        for keyword in preference_keywords:
+            if keyword in text_lower:
+                preferences.append(keyword)
+        return preferences
+
     def _resolve_step_dependencies(self, steps: List[PlanStep]) -> List[PlanStep]:
         """Resolve step dependencies and return steps in execution order."""
-        print(f"🔗 [DEPENDENCIES] Resolving dependencies for {len(steps)} steps")
 
         # Create lookup map by step name
         step_by_name = {step.name: step for step in steps}
@@ -386,11 +475,9 @@ class SierraAgent:
                 for dep_name in step.dependencies:
                     if dep_name not in completed_steps:
                         dependencies_satisfied = False
-                        print(f"🔗 [DEPENDENCIES] Step '{step.name}' waiting for dependency '{dep_name}'")
                         break
 
                 if dependencies_satisfied:
-                    print(f"✅ [DEPENDENCIES] Step '{step.name}' ready for execution")
                     execution_order.append(step)
                     completed_steps.add(step.name)
                     remaining_steps.remove(step)
@@ -398,20 +485,15 @@ class SierraAgent:
 
             if not made_progress:
                 # Handle circular dependencies or missing dependencies
-                print("⚠️ [DEPENDENCIES] Circular or missing dependencies detected")
-                print(f"⚠️ [DEPENDENCIES] Remaining steps: {[s.name for s in remaining_steps]}")
-                print(f"⚠️ [DEPENDENCIES] Completed steps: {list(completed_steps)}")
 
                 # Add remaining steps to execution order (fallback)
                 execution_order.extend(remaining_steps)
                 break
 
-        print(f"🔗 [DEPENDENCIES] Final execution order: {[s.name for s in execution_order]}")
         return execution_order
 
     def _gather_dependency_data(self, step: PlanStep, completed_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Gather data from completed dependency steps."""
-        print(f"📊 [DEPENDENCIES] Gathering dependency data for step '{step.name}'")
 
         dependency_data = {}
 
@@ -422,45 +504,46 @@ class SierraAgent:
                     step_result = completed_step["result"]
                     if isinstance(step_result, ToolResult) and step_result.success:
                         dependency_data[dep_step_id] = step_result.data
-                        print(f"📊 [DEPENDENCIES] Found data for dependency step '{dep_step_id}'")
                     break
 
-        print(f"📊 [DEPENDENCIES] Gathered {len(dependency_data)} dependency data items")
         return dependency_data
 
     def _generate_response_from_plan(self, plan: MultiTurnPlan, execution_results: Dict[str, Any]) -> str:
         """Generate a response based on plan execution results using unified LLM service."""
-        print(f"💭 [RESPONSE] Generating response for plan '{plan.plan_id}'")
 
-        # Collect all successful ToolResult objects
-        successful_tool_results = []
+        # Collect all ToolResult objects (both successful and failed)
+        all_tool_results = []
         for step_result in execution_results["steps"]:
             if step_result["success"] and isinstance(step_result["result"], ToolResult):
-                successful_tool_results.append(step_result["result"])
+                all_tool_results.append(step_result["result"])
 
-        print(f"💭 [RESPONSE] Found {len(successful_tool_results)} successful ToolResults")
-
-        if not successful_tool_results:
+        if not all_tool_results:
             return "I apologize, but I'm having trouble processing your request right now. Please try again or contact our support team."
 
         # Get request context
         request_type = plan.conversation_context.get("request_type", "general")
         conversation_phase = self.conversation.conversation_state.conversation_phase
         
+        # Limited context auditing for response generation
+        tool_data_types = []
+        for result in all_tool_results:
+            if result.success and result.data:
+                data_type = type(result.data).__name__
+                tool_data_types.append(data_type)
+            elif not result.success:
+                tool_data_types.append("ERROR")
+        
+        print(f"💭 [RESPONSE] Generating response | Request: {request_type} | Data types: {tool_data_types}")
+        
         # Use unified LLM service for response generation
         response = self.llm_service.generate_customer_service_response(
             user_input=plan.customer_request,
-            tool_results=successful_tool_results,
-            request_type=request_type,
-            conversation_phase=conversation_phase,
-            customer_sentiment="neutral",  # Could extract from conversation state
+            tool_results=all_tool_results,
             conversation_context=self.conversation,
             use_thinking_model=False  # Use fast model for responses
         )
         
-        print(f"💭 [RESPONSE] Generated unified response ({len(response)} chars)")
         return response
-
 
     def _extract_order_info(self, user_input: str) -> Dict[str, Any]:
         """Extract order information from user input."""
@@ -486,7 +569,6 @@ class SierraAgent:
             # For generic requests, use "outdoor" as default category to get some results
             category = "outdoor gear"
             preferences = ["outdoor", "adventure"]
-            print(f"🔍 [ANALYSIS] Generic product request detected, using fallback category: {category}")
 
         return {
             "preferences": preferences,
@@ -511,8 +593,6 @@ class SierraAgent:
             return sentiment
 
         except Exception as e:
-            print(f"❌ [SENTIMENT] Error analyzing sentiment: {e}")
-            print("🔄 [SENTIMENT] Falling back to NEUTRAL sentiment")
             return "NEUTRAL"
 
     def _analyze_sentiment_mock(self, user_input: str) -> str:
@@ -539,54 +619,34 @@ class SierraAgent:
 
         return sentiment
 
-
     def _check_conversation_quality(self) -> None:
         """Check and update conversation quality."""
-        print(
-            f"📊 [QUALITY] Starting quality check for interaction {self.interaction_count}"
-        )
-
+        
         try:
             # Simplified quality check - just use a mock score
             quality_score = 0.8
-            print(f"📊 [QUALITY] Mock quality score: {quality_score}")
 
             # Update conversation with quality score
             self.conversation.update_quality_score(quality_score)
-            print(f"📊 [QUALITY] Updated conversation with quality score: {quality_score}")
 
             self.last_quality_check = self.interaction_count
-            print("📊 [QUALITY] Quality check completed successfully")
 
         except Exception as e:
-            print(f"❌ [QUALITY] Error during quality check: {e}")
             logger.error(f"Error during quality check: {e}")
 
     def _update_analytics(self) -> None:
         """Update conversation analytics."""
-        print(
-            f"📈 [ANALYTICS] Starting analytics update for interaction {self.interaction_count}"
-        )
-
+        
         try:
             # Simplified analytics - just log
             if self.session_id:
-                print(f"📈 [ANALYTICS] Mock analytics update for session: {self.session_id}")
                 self.last_analytics_update = self.interaction_count
-                print("📈 [ANALYTICS] Analytics update completed successfully")
-            else:
-                print("⚠️ [ANALYTICS] No valid session ID, skipping analytics update")
-
         except Exception as e:
-            print(f"❌ [ANALYTICS] Error updating analytics: {e}")
             logger.error(f"Error updating analytics: {e}")
 
     def get_conversation_summary(self) -> Dict[str, Any]:
         """Get a summary of the current conversation."""
-        print(
-            f"📋 [SUMMARY] Generating conversation summary for session: {self.session_id}"
-        )
-
+        
         try:
             summary = {
                 "session_id": self.session_id,
@@ -600,17 +660,14 @@ class SierraAgent:
                 "last_analytics_update": self.last_analytics_update,
             }
 
-            print(f"📋 [SUMMARY] Generated summary with {len(summary)} elements")
             return summary
 
         except Exception as e:
-            print(f"❌ [SUMMARY] Error generating summary: {e}")
             logger.error(f"Error generating summary: {e}")
             return {"error": str(e)}
 
     def get_agent_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the agent."""
-        print("📊 [STATS] Generating comprehensive agent statistics...")
 
         try:
             stats = {
@@ -631,19 +688,14 @@ class SierraAgent:
                 },
             }
 
-            print(
-                f"📊 [STATS] Generated comprehensive statistics with {len(stats)} categories"
-            )
             return stats
 
         except Exception as e:
-            print(f"❌ [STATS] Error generating statistics: {e}")
             logger.error(f"Error generating statistics: {e}")
             return {"error": str(e)}
 
     def reset_conversation(self) -> None:
         """Reset the conversation and start fresh."""
-        print(f"🔄 [RESET] Resetting conversation for session: {self.session_id}")
 
         self.conversation.clear_conversation()
         self.session_id = None
@@ -651,38 +703,28 @@ class SierraAgent:
         self.last_quality_check = 0
         self.last_analytics_update = 0
 
-        print("🔄 [RESET] Conversation reset completed successfully")
         logger.info("Conversation reset")
 
     def end_conversation(self) -> None:
         """End the current conversation and finalize analytics."""
-        print(f"🏁 [END] Ending conversation for session: {self.session_id}")
 
         try:
             # Final quality check
             if self.config.enable_quality_monitoring:
-                print("🏁 [END] Performing final quality check...")
                 self._check_conversation_quality()
 
             # Final analytics update
             if self.config.enable_analytics:
-                print("🏁 [END] Performing final analytics update...")
                 self._update_analytics()
 
             # Generate final summary
-            print("🏁 [END] Generating final conversation summary...")
             final_summary = self.get_conversation_summary()
-            print(f"🏁 [END] Final summary: {final_summary}")
-
-            print("✅ [END] Conversation ended successfully")
 
         except Exception as e:
-            print(f"❌ [END] Error ending conversation: {e}")
             logger.error(f"Error ending conversation: {e}")
 
     def _add_context_to_conversation(self, context_data: Dict[str, Any]) -> None:
         """Add context data from tool results to conversation context."""
-        print(f"🔗 [CONTEXT] Adding context data to conversation: {list(context_data.keys())}")
         
         try:
             # Store context in conversation state for future tool access
@@ -691,10 +733,8 @@ class SierraAgent:
             
             # Merge new context with existing context
             self.conversation.context_storage.update(context_data)
-            print(f"✅ [CONTEXT] Context added successfully. Total context keys: {len(self.conversation.context_storage)}")
             
         except Exception as e:
-            print(f"❌ [CONTEXT] Error adding context to conversation: {e}")
             logger.error(f"Error adding context to conversation: {e}")
 
     def _build_continuation_completion_prompt(self, user_input: str, tool_name: str, result: "ToolResult") -> str:
@@ -716,19 +756,16 @@ Please present this information to the customer in a clear, friendly, and natura
 
     def _get_product_details_from_context(self) -> Dict[str, Any]:
         """Get product details from existing order context."""
-        print("📦 [PRODUCT_DETAILS] Getting product details from existing order context")
         
         available_data = self.conversation.get_available_data()
         if "current_order" in available_data:
             order = available_data["current_order"]
-            print(f"📦 [PRODUCT_DETAILS] Found order {order.order_number} with {len(order.products_ordered)} products")
             
             # Use the business tools to get product details for all products in the order
             # Call with a user input that indicates we want details for the order's products
             result = self.tool_orchestrator.execute_tool(
                 "get_product_details", 
-                f"show me details for the products in my order {order.order_number}",
-                conversation_context=self.conversation
+                skus=order.products_ordered
             )
             
             if result.success and result.data:
@@ -744,17 +781,14 @@ Please present this information to the customer in a clear, friendly, and natura
                     "message": "Here are the product IDs in your order. For detailed product information, please visit our website or contact customer service."
                 }
         else:
-            print("⚠️ [PRODUCT_DETAILS] No order context found")
             return {"error": "No order context available"}
 
     def _format_existing_order_status(self) -> Dict[str, Any]:
         """Format existing order status for display."""
-        print("📋 [FORMAT_ORDER] Formatting existing order status")
         
         available_data = self.conversation.get_available_data()
         if "current_order" in available_data:
             order = available_data["current_order"]
-            print(f"📋 [FORMAT_ORDER] Formatting order {order.order_number}")
             
             return {
                 "order_number": order.order_number,
@@ -766,5 +800,4 @@ Please present this information to the customer in a clear, friendly, and natura
                 "formatted": True
             }
         else:
-            print("⚠️ [FORMAT_ORDER] No order context found")
             return {"error": "No order context available"}
