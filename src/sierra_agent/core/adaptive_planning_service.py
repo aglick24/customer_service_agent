@@ -350,7 +350,8 @@ Response: Just the customer service message"""
                 user_input=user_input,
                 available_data=available_data,
                 conversation_context=f"Phase: {conversation_phase}, Topic: {current_topic}, Executed: {[step.tool_name for step in plan.executed_steps]}",
-                available_tools=available_tools
+                available_tools=available_tools,
+                tool_orchestrator=tool_orchestrator  # Pass the tool orchestrator for dynamic tool discovery
             )
             
             # Return all suggested actions for multistep execution
@@ -364,7 +365,7 @@ Response: Just the customer service message"""
     
     def _enhance_parameters_with_llm(self, plan: EvolvingPlan, action: str, user_input: str) -> Optional[Dict[str, Any]]:
         """Use LLM to enhance parameters for specific actions like recommendations."""
-        if action == "get_product_recommendations" and self.llm_service:
+        if action == "get_recommendations" and self.llm_service:
             try:
                 # Use LLM to generate smart search terms based on order/product context
                 order_context = {}
@@ -373,17 +374,21 @@ Response: Just the customer service message"""
                 
                 product_context = plan.context.found_products if plan.context.found_products else []
                 
-                # Generate intelligent search terms
-                search_terms = self.llm_service.generate_recommendation_search_terms(
-                    order_context=order_context,
-                    product_context=product_context
-                )
+                # Smart parameter selection for new recommendations tool
+                params = {"limit": 3}
                 
-                # Convert search terms to preferences list
-                preferences = search_terms.split()
+                # If we have order information, use complementary strategy
+                if plan.context.current_order:
+                    order = plan.context.current_order
+                    if hasattr(order, 'products_ordered') and order.products_ordered:
+                        return {
+                            "recommendation_type": "complement_to",
+                            "reference_skus": order.products_ordered,
+                            "limit": 3
+                        }
                 
-                # Return enhanced parameters
-                return {"category": None, "preferences": preferences}
+                # Default to general recommendations
+                return {"recommendation_type": "general", "limit": 3}
                 
             except Exception as e:
                 logger.exception(f"Error enhancing parameters with LLM: {e}")

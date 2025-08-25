@@ -95,41 +95,13 @@ Thank you for your patience!
         vague_requests = ["anything else", "what else", "more", "other", "else", "next", "additionally", "further"]
         is_vague = any(phrase in user_lower for phrase in vague_requests) or len(user_input.strip()) < 10
 
-        if is_vague and available_data:
-            # Context-aware suggestions for vague requests
-            if "current_order" in available_data:
-                # If we have order data, suggest product details or recommendations
-                suggestions.append("get_product_details")
-                suggestions.append("get_product_recommendations")
-                suggestions.append("get_early_risers_promotion")
-            else:
-                suggestions.append("search_products")
-                suggestions.append("get_company_info")
-        
-        # Explicit keyword-based requests
-        elif any(word in user_lower for word in ["order", "track", "delivery", "shipping"]):
-            if not (available_data and "current_order" in available_data):
-                suggestions.append("get_order_status")
-
-        elif any(word in user_lower for word in ["product", "recommend", "looking for", "search"]):
-            if available_data and "current_order" in available_data:
-                suggestions.append("get_product_recommendations")
-            else:
-                suggestions.append("search_products")
-
-        elif any(word in user_lower for word in ["promotion", "discount", "code", "sale"]):
-            suggestions.append("get_early_risers_promotion")
-
-        else:
-            # Default fallback - still try to be contextual
-            if available_data and "current_order" in available_data:
-                suggestions.append("get_product_recommendations")
-            else:
-                suggestions.append("get_company_info")
+        # REMOVED: All hardcoded tool suggestions 
+        # The tool orchestrator registry is now the single source of truth
+        # LLM analysis with dynamic tool discovery handles all tool selection
 
         return suggestions
 
-    def analyze_vague_request_and_suggest(self, user_input: str, available_data: Optional[Dict[str, Any]] = None, conversation_context: Optional[str] = None, available_tools: Optional[List[str]] = None) -> List[str]:
+    def analyze_vague_request_and_suggest(self, user_input: str, available_data: Optional[Dict[str, Any]] = None, conversation_context: Optional[str] = None, available_tools: Optional[List[str]] = None, tool_orchestrator=None) -> List[str]:
         """Use LLM to analyze requests and suggest the right sequence of actions."""
         try:
             # Build a specialized prompt for vague request analysis
@@ -150,28 +122,36 @@ Thank you for your patience!
             
             conversation_info = f"\nConversation Context: {conversation_context}" if conversation_context else ""
             
-            # Use provided tools or default set
-            tools_list = available_tools or [
-                "get_order_status", "get_product_details", "search_products",
-                "get_product_recommendations", "get_early_risers_promotion",
-                "get_company_info", "get_contact_info", "get_policies"
-            ]
+            # EXTENSIBLE: Get tools dynamically from tool orchestrator
+            if tool_orchestrator and hasattr(tool_orchestrator, 'get_available_tools'):
+                tools_list = tool_orchestrator.get_available_tools()
+            else:
+                # Fallback to updated tool names
+                tools_list = available_tools or [
+                    "get_order_status", "get_product_info", "browse_catalog",
+                    "get_recommendations", "get_early_risers_promotion",
+                    "get_company_info", "get_contact_info", "get_policies"
+                ]
             
-            # Enhanced tool descriptions with parameters and usage
-            tool_descriptions = {
-                "get_order_status": "get_order_status(email, order_number) - Get order details, status, and tracking info",
-                "get_product_details": "get_product_details(skus: List[str]) - Get detailed product information for specific SKUs",
-                "search_products": "search_products(query: str) - Search products by name/description/tags",
-                "get_product_recommendations": "get_product_recommendations(category=None, preferences=None) - Get product recommendations",
-                "get_early_risers_promotion": "get_early_risers_promotion() - Check Early Risers promotion (8-10 AM PT)",
-                "get_company_info": "get_company_info() - Get Sierra Outfitters company information",
-                "get_contact_info": "get_contact_info() - Get contact details and social media",
-                "get_policies": "get_policies() - Get return, shipping, and warranty policies"
-            }
-            
-            tools_description = "\n".join([
-                f"- {tool_descriptions.get(tool, tool)}" for tool in tools_list
-            ])
+            # EXTENSIBLE: Get tool descriptions from orchestrator if available
+            if tool_orchestrator and hasattr(tool_orchestrator, 'get_tools_for_llm_planning'):
+                tools_description = tool_orchestrator.get_tools_for_llm_planning()
+            else:
+                # Fallback tool descriptions
+                tool_descriptions = {
+                    "get_order_status": "get_order_status(email, order_number) - Get order details, status, and tracking info",
+                    "get_product_info": "get_product_info(product_identifier) - Get detailed product information by SKU or name",
+                    "browse_catalog": "browse_catalog(search_query=None, category_filter=None) - Browse product catalog",
+                    "get_recommendations": "get_recommendations(recommendation_type='general', reference_skus=None, activity_or_need=None) - Get personalized product recommendations",
+                    "get_early_risers_promotion": "get_early_risers_promotion() - Check Early Risers promotion (8-10 AM PT)",
+                    "get_company_info": "get_company_info() - Get Sierra Outfitters company information",
+                    "get_contact_info": "get_contact_info() - Get contact details and social media",
+                    "get_policies": "get_policies() - Get return, shipping, and warranty policies"
+                }
+                
+                tools_description = "\n".join([
+                    f"- {tool_descriptions.get(tool, tool)}" for tool in tools_list
+                ])
             
             prompt = f"""You are an intelligent customer service workflow planner for Sierra Outfitters outdoor gear company. Your job is to analyze what the customer wants and determine the best response approach.
 

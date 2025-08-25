@@ -6,9 +6,7 @@ and operations for the Sierra Outfitters customer service system.
 """
 
 import logging
-import re
-from datetime import datetime, timedelta
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone
 
 from sierra_agent.data.data_provider import DataProvider
 from sierra_agent.data.data_types import ToolResult
@@ -23,120 +21,8 @@ class BusinessTools:
         self.data_provider = DataProvider()
         logger.info("BusinessTools initialized with DataProvider")
 
-    def get_order_status(self, email: str, order_number: str) -> ToolResult:
-        """Get order status and tracking information."""
-
-        # Validate required parameters
-        if not email or not order_number:
-            return ToolResult(
-                success=False,
-                error="Both email address and order number are required.",
-                data=None
-            )
-
-        # Get order from data provider
-        order = self.data_provider.get_order_status(email, order_number)
-
-        if not order:
-            return ToolResult(
-                success=False,
-                error=Branding.get_adventure_error_message("order_not_found"),
-                data=None
-            )
-
-        return ToolResult(success=True, data=order, error=None)
-
-    def search_products(self, query: str) -> ToolResult:
-        """Search for products based on query."""
-
-        if not query or not query.strip():
-            return ToolResult(
-                success=False,
-                error="Search query is required.",
-                data=None
-            )
-
-        # Use DataProvider to search products
-        matching_products = self.data_provider.search_products(query.strip())
-
-        if not matching_products:
-            return ToolResult(
-                success=False,
-                error=Branding.get_adventure_error_message("product_not_found"),
-                data=None
-            )
-
-        return ToolResult(
-            success=True,
-            data=matching_products,  # List[Product]
-            error=None
-        )
-
-    def get_product_details(self, skus: List[str]) -> ToolResult:
-        """Get detailed product information for specific SKUs."""
-
-        if not skus:
-            return ToolResult(
-                success=False,
-                error="At least one product SKU is required.",
-                data=None
-            )
-
-        # Get products for each SKU
-        products = []
-        for sku in skus:
-            if not sku or not sku.strip():
-                continue
-            product = self.data_provider.get_product_by_sku(sku.strip())
-            if product:
-                products.append(product)
-
-        if not products:
-            return ToolResult(
-                success=False,
-                error=f"No products found for SKUs: {', '.join(skus)}",
-                data=None
-            )
-
-        # Return single product if only one, list if multiple
-        return ToolResult(success=True, data=products if len(products) > 1 else products[0], error=None)
-
-    def get_product_recommendations(self, category: Optional[str] = None, preferences: Optional[List[str]] = None) -> ToolResult:
-        """Get product recommendations based on category and preferences."""
-
-        recommendations = []
-        
-        if category:
-            recommendations = self.data_provider.get_products_by_category(category)
-        elif preferences:
-            # Search for each preference term individually and combine results
-            seen_skus = set()
-            for term in preferences:
-                term_results = self.data_provider.search_products(term)
-                for product in term_results:
-                    if product.sku not in seen_skus:
-                        recommendations.append(product)
-                        seen_skus.add(product.sku)
-        else:
-            # Default to outdoor products with fallback
-            recommendations = self.data_provider.search_products("outdoor")
-            if len(recommendations) < 3:
-                # Add more products with other broad terms
-                additional = self.data_provider.search_products("adventure")
-                seen_skus = {p.sku for p in recommendations}
-                for product in additional:
-                    if product.sku not in seen_skus:
-                        recommendations.append(product)
-
-        if not recommendations:
-            return ToolResult(
-                success=False,
-                error=Branding.get_adventure_error_message("product_not_found"),
-                data=None
-            )
-
-        # Limit to 5 recommendations
-        return ToolResult(success=True, data=recommendations[:5], error=None)
+    # REMOVED: get_order_status, search_products, get_product_details, get_product_recommendations  
+    # These are now handled by the extensible tool system in order_tools.py and product_tools.py
 
     def get_company_info(self) -> ToolResult:
         """Get company information."""
@@ -193,63 +79,8 @@ class BusinessTools:
             error=None
         )
 
-    # Helper methods
-
-    def _extract_product_id(self, text: str) -> Optional[str]:
-        """Extract product ID from text."""
-
-        # Look for patterns like PROD001, Product 001
-        patterns = [r"PROD\d+", r"Product\s+(\d+)"]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return (
-                    match.group(1) if len(match.groups()) > 0 else match.group(0)
-                )
-
-
-        return None
-
-    def _extract_email(self, text: str) -> Optional[str]:
-        """Extract email address from text."""
-
-        # Look for email pattern
-        email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
-        match = re.search(email_pattern, text)
-
-        if match:
-            return match.group(0)
-
-
-        return None
-
-    def _extract_order_number(self, text: str) -> Optional[str]:
-        """Extract order number from text with improved pattern matching."""
-
-        # Comprehensive patterns for order numbers including flexible formatting
-        patterns = [
-            r"#\s*W\s*\d+",           # #W001, # W001, #W 001
-            r"\bW\s*-?\s*\d+\b",      # W001, W-001, W 001 (with word boundaries)
-            r"order\s+#?\s*W\s*-?\s*\d+",  # Order W001, order #W001, order W-001
-            r"order\s+number\s+#?\s*W\s*-?\s*\d+",  # order number W001
-            r"my\s+order\s+#?\s*W\s*-?\s*\d+",      # my order W001
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                # Extract just the core order number part
-                order_text = match.group(0)
-
-                # Find the W and number part
-                w_match = re.search(r"W\s*-?\s*(\d+)", order_text, re.IGNORECASE)
-                if w_match:
-                    number_part = w_match.group(1)
-                    return f"#W{number_part.zfill(3)}"  # Ensure consistent format like #W001
-
-
-        return None
+    # REMOVED: Helper methods (_extract_product_id, _extract_email, _extract_order_number)
+    # These are no longer needed with the new extensible tool system
 
     def get_early_risers_promotion(self) -> ToolResult:
         """Check and provide Early Risers promotion if available."""
@@ -285,42 +116,6 @@ class BusinessTools:
 
         return ToolResult(success=True, data=result, error=None)
 
-    def _extract_product_category(self, text: str) -> Optional[str]:
-        """Extract product category from text."""
-        text_lower = text.lower()
-
-        # Common product categories from the catalog
-        categories = [
-            "backpack", "hiking", "adventure", "outdoor gear",
-            "skis", "snow", "winter", "high-tech", "trail", "comfort",
-            "food & beverage", "weatherproof", "versatile", "explorer",
-            "rugged design", "trailblazing", "personal flight", "safety-enhanced",
-            "stealth", "discretion", "advanced cloaking", "fashion", "lifestyle",
-            "teleportation", "transport", "home decor", "lighting", "modern design",
-            "luxury", "interior style"
-        ]
-
-        for category in categories:
-            if category in text_lower:
-                return category
-
-        return None
-
-    def _extract_preferences(self, text: str) -> List[str]:
-        """Extract customer preferences from text."""
-        text_lower = text.lower()
-        preferences = []
-
-        # Common preference keywords
-        preference_keywords = [
-            "hiking", "camping", "adventure", "outdoor", "winter", "summer",
-            "comfort", "luxury", "budget", "premium", "lightweight", "durable",
-            "waterproof", "high-tech", "traditional", "modern", "classic"
-        ]
-
-        for keyword in preference_keywords:
-            if keyword in text_lower:
-                preferences.append(keyword)
-
-        return preferences
+    # REMOVED: _extract_product_category and _extract_preferences
+    # These are handled by the new extensible tool system with better parameter validation
 

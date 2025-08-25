@@ -517,16 +517,24 @@ Respond with ONLY a JSON array of tool names for the next steps:
 
         return "\n".join(formatted)
 
-    def _format_available_tools(self, tools: List[str]) -> str:
-        """Format available tools with descriptions."""
+    def _format_available_tools(self, tools: List[str], tool_orchestrator=None) -> str:
+        """Format available tools with descriptions from registry when possible."""
         if not tools:
             return "No tools available."
 
+        # Try to get descriptions from the tool orchestrator first
+        if tool_orchestrator and hasattr(tool_orchestrator, 'get_tools_for_llm_planning'):
+            try:
+                return tool_orchestrator.get_tools_for_llm_planning()
+            except Exception:
+                pass  # Fallback to hardcoded descriptions
+        
+        # Fallback to hardcoded descriptions
         tool_descriptions = {
             "get_order_status": "Look up order information by order number and email",
-            "search_products": "Find products matching customer criteria",
-            "get_product_details": "Get detailed information for specific products",
-            "get_product_recommendations": "Find products similar to or related to existing ones",
+            "browse_catalog": "Browse and search Sierra Outfitters product catalog",
+            "get_product_info": "Get detailed information for specific products by SKU or name",
+            "get_recommendations": "Get personalized product recommendations based on customer context",
             "get_early_risers_promotion": "Check for available promotions and discounts",
             "get_company_info": "Get general company information",
             "get_contact_info": "Get contact information for customer service",
