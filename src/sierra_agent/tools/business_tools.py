@@ -24,72 +24,54 @@ class BusinessTools:
         self.data_provider = DataProvider()
         logger.info("BusinessTools initialized with DataProvider")
 
-    def get_order_status(self, user_input: str) -> ToolResult:
-        """Get order status and tracking information."""
-        print(
-            f"📦 [ORDER_STATUS] Processing order status request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
-        )
+    def get_order_status(self, user_input: str, conversation_context=None) -> ToolResult:
+        """Get order status and tracking information - simplified approach."""
+        print(f"📦 [ORDER_STATUS] Processing order status request: '{user_input[:50]}...'")
 
-        # Extract email and order number from user input
+        # Simple extraction - no complex continuation logic
         email = self._extract_email(user_input)
         order_number = self._extract_order_number(user_input)
 
-        if not email:
-            print("❌ [ORDER_STATUS] No email found in user input")
+        # If missing data, return error with helpful message
+        if not email or not order_number:
             return ToolResult(
                 success=False,
-                error="I need your email address to look up your order. Please provide it and try again.",
-                data=None
-            )
-
-        if not order_number:
-            print("❌ [ORDER_STATUS] No order number found in user input")
-            return ToolResult(
-                success=False,
-                error="I need your order number to check the status. Please provide it in the format W001 or #W001.",
+                error="I need both your email address and order number to look up your order. Please provide both in your message.",
                 data=None
             )
 
         print(f"📦 [ORDER_STATUS] Looking up order {order_number} for {email}")
 
-        # Use DataProvider to get typed Order object
+        # Get order from data provider
         order = self.data_provider.get_order_status(email, order_number)
 
         if not order:
-            print(f"❌ [ORDER_STATUS] Order {order_number} not found for {email}")
             return ToolResult(
                 success=False,
-                error=f"I couldn't find order {order_number} for {email}. Please double-check your order number and email address, or contact our support team if you need help.",
+                error=f"Order {order_number} not found for {email}. Please check your details.",
                 data=None
             )
 
-        print(f"✅ [ORDER_STATUS] Found order {order_number} with status: {order.status}")
-
-        # Return the typed Order object wrapped in ToolResult
-        print("📦 [ORDER_STATUS] Returning typed Order object")
-        return ToolResult(
-            success=True,
-            data=order,  # Keep the typed Order object!
-            error=None
-        )
+        print(f"✅ [ORDER_STATUS] Found order {order_number}")
+        return ToolResult(success=True, data=order, error=None)
 
 
 
-    def search_products(self, query: str) -> ToolResult:
+    def search_products(self, user_input: str, conversation_context=None) -> ToolResult:
         """Search for products based on query using DataProvider."""
         print(
-            f"🔍 [PRODUCT_SEARCH] Searching products for query: '{query[:30]}{'...' if len(query) > 30 else ''}'"
+            f"🔍 [PRODUCT_SEARCH] Searching products for query: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
         )
 
         # Use DataProvider to search products
-        matching_products = self.data_provider.search_products(query)
+        matching_products = self.data_provider.search_products(user_input)
 
         print(f"🔍 [PRODUCT_SEARCH] Found {len(matching_products)} matching products")
 
         if not matching_products:
             return ToolResult(
                 success=False,
-                error=f"I couldn't find any products matching '{query}'. Try using different keywords like 'hiking', 'camping', or 'boots'.",
+                error=f"I couldn't find any products matching '{user_input}'. Try using different keywords like 'hiking', 'camping', or 'boots'.",
                 data=None
             )
 
@@ -101,57 +83,47 @@ class BusinessTools:
             error=None
         )
 
-    def get_product_details(self, user_input: str) -> ToolResult:
-        """Get detailed product information using DataProvider."""
-        print(
-            f"📦 [PRODUCT_DETAILS] Processing product details request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
-        )
+    def get_product_details(self, user_input: str, conversation_context=None) -> ToolResult:
+        """Get detailed product information - simplified approach."""
+        print(f"📦 [PRODUCT_DETAILS] Processing: '{user_input[:50]}...'")
 
         # Try to extract product SKU/ID first
         product_sku = self._extract_product_id(user_input)
         if product_sku:
-            print(f"📦 [PRODUCT_DETAILS] Extracted product SKU: {product_sku}")
             product = self.data_provider.get_product_by_sku(product_sku)
             if product:
-                print(f"✅ [PRODUCT_DETAILS] Found product by SKU: {product_sku}")
                 return ToolResult(success=True, data=product, error=None)
 
         # Try general search for product name
         search_results = self.data_provider.search_products(user_input)
         if search_results:
-            print("✅ [PRODUCT_DETAILS] Found product via search")
             return ToolResult(success=True, data=search_results[0], error=None)
 
-        print("❌ [PRODUCT_DETAILS] No product found")
         return ToolResult(
             success=False,
             error="Product not found. Please provide a valid product name or SKU.",
             data=None
         )
 
-    def get_product_recommendations(self, user_input: str) -> ToolResult:
-        """Get product recommendations based on user input using DataProvider."""
-        print(
-            f"💡 [RECOMMENDATIONS] Processing recommendations request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
-        )
+    def get_product_recommendations(self, user_input: str, conversation_context=None) -> ToolResult:
+        """Get product recommendations - simplified approach."""
+        print(f"💡 [RECOMMENDATIONS] Processing: '{user_input[:50]}...'")
 
         # Extract preferences from user input
         preferences = self._extract_preferences(user_input)
         category = self._extract_product_category(user_input)
-
-        print(f"💡 [RECOMMENDATIONS] Detected preferences: {preferences}, category: {category}")
 
         # Get recommendations from DataProvider
         if category:
             recommendations = self.data_provider.get_products_by_category(category)
         else:
             # Use search to find products based on preferences
-            search_terms = " ".join(preferences) if preferences else "hiking adventure"
+            search_terms = " ".join(preferences) if preferences else "outdoor hiking"
             recommendations = self.data_provider.search_products(search_terms)
 
+        # Fallback to general outdoor products
         if not recommendations:
-            print("💡 [RECOMMENDATIONS] No specific recommendations, getting general search results")
-            recommendations = self.data_provider.search_products("outdoor")[:3]
+            recommendations = self.data_provider.search_products("outdoor")[:5]
 
         if not recommendations:
             return ToolResult(
@@ -161,16 +133,9 @@ class BusinessTools:
             )
 
         print(f"💡 [RECOMMENDATIONS] Generated {len(recommendations)} recommendations")
+        return ToolResult(success=True, data=recommendations, error=None)
 
-        # Return the list of Product objects directly
-        print("💡 [RECOMMENDATIONS] Returning recommendations")
-        return ToolResult(
-            success=True,
-            data=recommendations,  # List[Product]
-            error=None
-        )
-
-    def get_company_info(self, user_input: str) -> ToolResult:
+    def get_company_info(self, user_input: str, conversation_context=None) -> ToolResult:
         """Get company information."""
         print(
             f"🏢 [COMPANY_INFO] Processing company info request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
@@ -195,7 +160,7 @@ class BusinessTools:
             error=None
         )
 
-    def get_contact_info(self, user_input: str) -> ToolResult:
+    def get_contact_info(self, user_input: str, conversation_context=None) -> ToolResult:
         """Get contact information."""
         print(
             f"📞 [CONTACT_INFO] Processing contact info request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
@@ -217,7 +182,7 @@ class BusinessTools:
             error=None
         )
 
-    def get_policies(self, user_input: str) -> ToolResult:
+    def get_policies(self, user_input: str, conversation_context=None) -> ToolResult:
         """Get company policies."""
         print(
             f"📋 [POLICIES] Processing policies request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"
@@ -315,7 +280,7 @@ class BusinessTools:
 
 
 
-    def get_early_risers_promotion(self, user_input: str) -> ToolResult:
+    def get_early_risers_promotion(self, user_input: str, conversation_context=None) -> ToolResult:
         """Check and provide Early Risers promotion if available."""
         print(
             f"🎉 [EARLY_RISERS] Processing Early Risers promotion request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'"

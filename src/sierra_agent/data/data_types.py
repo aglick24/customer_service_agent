@@ -221,9 +221,11 @@ class Promotion:
 @dataclass
 class ToolResult:
     """Simple, standardized container for tool results."""
-    data: Any
+    data: Any = None
     success: bool = True
     error: Optional[str] = None
+    
+    # Clean result container - no continuation cruft
 
     def to_dict(self) -> Dict[str, Any]:
         """Standardized serialization for all tool results."""

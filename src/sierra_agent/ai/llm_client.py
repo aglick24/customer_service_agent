@@ -25,10 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Client for interacting with OpenAI's language models."""
+    """Pure OpenAI API client - handles only API communication."""
 
     def __init__(self, model_name: str = "gpt-4o", max_tokens: int = 1000) -> None:
-
         self.model_name = model_name
         self.max_tokens = max_tokens
 
@@ -47,42 +46,55 @@ class LLMClient:
         else:
             self.client = None
 
-        # Initialize usage tracking
-        self.usage_stats: Dict[str, Any] = {
-            "total_requests": 0,
-            "total_tokens": 0,
-            "requests_by_model": {},
-            "last_request": None,
-        }
         logger.info(f"LLMClient initialized with model {model_name}")
 
 
+    def call_llm(self, prompt: str, temperature: float = 0.7) -> str:
+        """Make a direct API call to OpenAI - pure interface."""
+        if not self.api_key:
+            raise ValueError("OpenAI API key is required")
+
+        if not self.client:
+            raise ValueError("OpenAI client not initialized")
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=self.max_tokens,
+                temperature=temperature,
+            )
+
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty response from OpenAI")
+
+            return content.strip()
+
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise
+
     def generate_response(self, context: Dict[str, Any]) -> str:
         """Generate a response based on the given context."""
-
         if not self.api_key:
             raise ValueError("OpenAI API key is required for response generation")
 
         try:
             response = self._generate_response_with_openai(context)
-            self._update_usage_stats("response_generation")
             return response
-
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             raise e
 
-
-
     def _generate_response_with_openai(self, context: Dict[str, Any]) -> str:
         """Generate response using OpenAI API."""
-
         try:
             if not self.client:
                 raise ValueError("OpenAI client not initialized")
 
-            # Build prompt from context
-            prompt = self._build_response_prompt(context)
+            # Build simple prompt from context
+            prompt = self._build_simple_prompt(context)
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -95,125 +107,38 @@ class LLMClient:
             if not content:
                 raise ValueError("Empty response from OpenAI")
 
-            generated_response = content.strip()
-            print(
-                f"🌐 [LLM_CLIENT] OpenAI generated response: {len(generated_response)} characters"
-            )
-
-            return generated_response
+            return content.strip()
 
         except Exception as e:
-            print(f"❌ [LLM_CLIENT] OpenAI API error: {e}")
+            logger.error(f"OpenAI API error: {e}")
             raise
 
-
-    def _build_response_prompt(self, context: Dict[str, Any]) -> str:
-        """Build a prompt for response generation from ToolResult context."""
-        print("📝 [LLM_CLIENT] Building response prompt from ToolResult context...")
-
+    def _build_simple_prompt(self, context: Dict[str, Any]) -> str:
+        """Build a simple, effective prompt from context."""
         user_input = context.get("user_input", "")
         customer_request = context.get("customer_request", user_input)
-        intent = context.get("intent", "customer_service")
-        primary_tool_result = context.get("primary_tool_result")  # Main ToolResult
-        conversational_context = context.get("conversational_context", "")  # Rich conversation context
-
-        print(f"📝 [LLM_CLIENT] Primary tool result available: {primary_tool_result is not None}")
-
-        # Check for errors and format the business data
-        has_error = False
-        formatted_data = ""
-
-        if primary_tool_result:
-            if not primary_tool_result.success:
-                has_error = True
-                formatted_data = primary_tool_result.error
-                print("📝 [LLM_CLIENT] Error detected in primary tool result")
+        primary_tool_result = context.get("primary_tool_result")
+        
+        # Simple data formatting
+        if primary_tool_result and primary_tool_result.success:
+            # Use the data directly without complex serialization
+            data = primary_tool_result.data
+            if hasattr(data, '__dict__'):
+                formatted_data = str(data.__dict__)
+            elif isinstance(data, (list, dict)):
+                formatted_data = str(data)
             else:
-                # Use the intelligent serialization method
-                try:
-                    formatted_data = primary_tool_result.serialize_for_context()
-                    print(f"📝 [LLM_CLIENT] Formatted business data: {len(formatted_data)} characters")
-                except Exception as e:
-                    print(f"❌ [LLM_CLIENT] Error formatting tool result: {e}")
-                    formatted_data = f"Data formatting error: {e!s}"
-                    has_error = True
+                formatted_data = str(data)
         else:
-            has_error = True
-            formatted_data = "No business data available"
-            print("📝 [LLM_CLIENT] No primary tool result available")
+            formatted_data = "No data available"
 
-        if has_error:
-            prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
+        prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
 
 Customer's message: "{customer_request}"
 
-SYSTEM RESPONSE:
+Business data:
 {formatted_data}
 
-INSTRUCTIONS:
-- The system encountered an issue processing the customer's request (see above)
-- If there's an error message, use it to provide a helpful response to the customer
-- Be professional, friendly, and apologetic about any issues
-- Offer alternative assistance or ask for clarification if needed
-- Sign as "Sierra Outfitters Customer Service Team"
+Provide a helpful, professional response using the business data above. Sign as "Sierra Outfitters Customer Service Team"."""
 
-Please write a helpful response addressing the issue:"""
-        else:
-            # NEW: Use conversational context if available, otherwise use formatted data
-            context_data = conversational_context if conversational_context else formatted_data
-
-            prompt = f"""You are a helpful customer service agent for Sierra Outfitters, a premium outdoor gear retailer.
-
-Customer's message: "{customer_request}"
-
-CONVERSATION CONTEXT:
-{context_data}
-
-INSTRUCTIONS:
-- You have access to current and previous conversation data above
-- Use this information to provide a specific, helpful response that references relevant context
-- If you see previous interactions, acknowledge them naturally ("As I mentioned earlier..." or "Following up on your order...")
-- If order data is available (order_number, status, products, tracking), provide complete order details
-- If promotion data is available (available, discount_code, message), explain the promotion status clearly
-- Be professional, friendly, and specific
-- Sign as "Sierra Outfitters Customer Service Team"
-- Do NOT claim you don't have access to information when data is provided above
-
-Please write a helpful response using the retrieved business data:"""
-
-        print(f"📝 [LLM_CLIENT] Prompt built with {len(prompt)} characters")
         return prompt
-
-    def _update_usage_stats(self, request_type: str) -> None:
-        """Update usage statistics for a specific request type."""
-        if request_type not in self.usage_stats["requests_by_model"]:
-            self.usage_stats["requests_by_model"][request_type] = 0
-        self.usage_stats["requests_by_model"][request_type] += 1
-        self.usage_stats["last_request"] = datetime.now().isoformat()
-
-    def get_usage_stats(self) -> Dict[str, Any]:
-        """Get current usage statistics."""
-        print("📊 [LLM_CLIENT] Retrieving usage statistics...")
-
-        stats = self.usage_stats.copy()
-        stats["model_name"] = self.model_name
-        stats["max_tokens"] = self.max_tokens
-        stats["has_api_key"] = bool(self.api_key)
-
-        print(
-            f"📊 [LLM_CLIENT] Usage stats retrieved: {stats['total_requests']} total requests"
-        )
-        return stats
-
-    def reset_usage_stats(self) -> None:
-        """Reset usage statistics."""
-        print("🔄 [LLM_CLIENT] Resetting usage statistics...")
-
-        self.usage_stats = {
-            "total_requests": 0,
-            "total_tokens": 0,
-            "requests_by_model": {},
-            "last_request": None,
-        }
-
-        print("✅ [LLM_CLIENT] Usage statistics reset")

@@ -1,16 +1,14 @@
 """
 Tool Orchestrator
 
-This module coordinates the execution of various business tools based on
-customer intent and provides a unified interface for tool management.
+This module coordinates the execution of various business tools and
+provides a unified interface for tool management with proper dependency injection.
 """
 
 import logging
-import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
-from ..ai.llm_client import LLMClient
 from ..data.data_types import ToolResult
 from .business_tools import BusinessTools
 
@@ -29,15 +27,16 @@ class ToolExecutionResult:
 
 
 class ToolOrchestrator:
-    """Orchestrates the execution of business tools based on customer intent."""
+    """Orchestrates the execution of business tools with clean separation of concerns."""
 
-    def __init__(
-        self, low_latency_llm: Optional[Union[Any, "LLMClient"]] = None
-    ) -> None:
+    def __init__(self) -> None:
+        """Initialize ToolOrchestrator - pure tool coordination."""
+        print("🎭 [ORCHESTRATOR] Initializing ToolOrchestrator...")
+        
         self.business_tools = BusinessTools()
 
         # Available business tools registry (for plan-based execution)
-        self.available_tools = {
+        self.available_tools: Dict[str, Callable[..., Any]] = {
             "get_order_status": self.business_tools.get_order_status,
             "search_products": self.business_tools.search_products,
             "get_product_details": self.business_tools.get_product_details,
@@ -50,13 +49,7 @@ class ToolOrchestrator:
         # Custom tools registry
         self.custom_tools: Dict[str, Callable] = {}
 
-        # Initialize LLM client
-        self.llm_client = self._initialize_llm_client()
-
-        # Tool cache for performance
-        self.tool_cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl = 300  # 5 minutes
-
+        print(f"🎭 [ORCHESTRATOR] Initialized with {len(self.available_tools)} business tools")
         logger.info("ToolOrchestrator initialized")
 
     def _register_custom_tools(self) -> None:
@@ -68,19 +61,8 @@ class ToolOrchestrator:
 
         print("🎭 [ORCHESTRATOR] Custom tools registration complete")
 
-    def _initialize_llm_client(self):
-        """Initialize the LLM client."""
-        try:
-            from ..ai.llm_client import LLMClient
-
-            client = LLMClient()
-            return client
-        except Exception as e:
-            logger.error(f"Error creating LLM client: {e}")
-            raise e
-
-    def execute_tool(self, tool_name: str, user_input: str) -> ToolResult:
-        """Execute a specific tool by name for plan-based execution."""
+    def execute_tool(self, tool_name: str, user_input: str, conversation_context=None) -> ToolResult:
+        """Execute a specific tool by name - simple coordination."""
         try:
             # Check if tool is available
             if tool_name not in self.available_tools:
@@ -91,11 +73,11 @@ class ToolOrchestrator:
                     data=None
                 )
 
-            # Execute the tool
+            # Execute the tool with standard parameters
             tool_method = self.available_tools[tool_name]
-            result = tool_method(user_input)
-
-            # All mapped tools return ToolResult objects
+            
+            # Clean tool signature: tool(user_input, conversation_context)
+            result = tool_method(user_input, conversation_context=conversation_context)
             return result
 
         except Exception as e:
@@ -171,45 +153,7 @@ class ToolOrchestrator:
                 ]
             ),
             "custom_tools": len(self.custom_tools),
-            "cached_results": len(self.tool_cache),
-            "cache_ttl": self.cache_ttl,
         }
 
         print(f"📊 [ORCHESTRATOR] Statistics: {stats}")
         return stats
-
-    def clear_cache(self) -> None:
-        """Clear the tool execution cache."""
-        print("🧹 [ORCHESTRATOR] Clearing tool execution cache...")
-
-        cache_size = len(self.tool_cache)
-        self.tool_cache.clear()
-
-        print(f"🧹 [ORCHESTRATOR] Cache cleared, removed {cache_size} entries")
-        logger.info("Tool execution cache cleared")
-
-    def get_cached_result(
-        self, request_type: str, user_input: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get cached result if available and not expired."""
-        print(f"🔍 [ORCHESTRATOR] Checking cache for request type: {request_type}")
-
-        cache_key = f"{request_type}_{hash(user_input)}"
-
-        if cache_key in self.tool_cache:
-            cached_data = self.tool_cache[cache_key]
-            age = time.time() - cached_data["timestamp"]
-
-            if age < self.cache_ttl:
-                print(
-                    f"✅ [ORCHESTRATOR] Cache hit for key: {cache_key} (age: {age:.1f}s)"
-                )
-                return cached_data["results"]
-            print(
-                f"⏰ [ORCHESTRATOR] Cache expired for key: {cache_key} (age: {age:.1f}s)"
-            )
-            del self.tool_cache[cache_key]
-        else:
-            print(f"❌ [ORCHESTRATOR] Cache miss for key: {cache_key}")
-
-        return None

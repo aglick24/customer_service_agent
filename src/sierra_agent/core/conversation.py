@@ -115,6 +115,7 @@ class Conversation:
         self.quality_score: Optional[float] = None
         self.start_time = datetime.now()
         self.last_activity = datetime.now()
+        self.context_storage: Dict[str, Any] = {}  # Add explicit context storage
             
         print("💬 [CONVERSATION] Conversation initialized successfully")
         logger.info("New conversation initialized")
@@ -421,20 +422,25 @@ class Conversation:
         logger.info("Conversation cleared and reset")
 
     def get_available_data(self) -> Dict[str, Any]:
-        """Get all data available from previous tool results."""
-        print("📋 [CONVERSATION] Getting available data from conversation history...")
+        """Get all data available from previous tool results and context storage."""
+        print("📋 [CONVERSATION] Getting available data from conversation history and context storage...")
         available = {}
         
-        # Get recent tool results from messages
+        # First check context storage if it exists
+        if hasattr(self, 'context_storage') and self.context_storage:
+            print(f"📋 [CONVERSATION] Found context storage with keys: {list(self.context_storage.keys())}")
+            available.update(self.context_storage)
+        
+        # Get recent tool results from messages (for backwards compatibility)
         for message in reversed(self.messages):
             if message.tool_results:
                 for tool_result in message.tool_results:
                     if tool_result.success and tool_result.data:
                         data_type = type(tool_result.data).__name__
-                        if data_type == "Order":
+                        if data_type == "Order" and "current_order" not in available:
                             available["current_order"] = tool_result.data
                             print(f"📋 [CONVERSATION] Found order data: {tool_result.data.order_number}")
-                        elif data_type == "list" and tool_result.data:
+                        elif data_type == "list" and tool_result.data and "recent_products" not in available:
                             # Check if it's products
                             if hasattr(tool_result.data[0], 'product_name'):
                                 available["recent_products"] = tool_result.data

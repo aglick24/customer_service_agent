@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ..ai.llm_client import LLMClient
+from ..ai.llm_service import LLMService
 from ..core.conversation import Conversation
 from ..core.planning_service import PlanningService
 from ..data.data_types import (
@@ -51,24 +51,17 @@ class SierraAgent:
 
         self.conversation = Conversation()
 
-        if self.config.enable_dual_llm:
-            self.thinking_llm = LLMClient(
-                model_name=self.config.thinking_model, max_tokens=2000
-            )
-            self.low_latency_llm = LLMClient(
-                model_name=self.config.low_latency_model, max_tokens=1000
-            )
-        else:
-            self.thinking_llm = LLMClient(
-                model_name=self.config.thinking_model, max_tokens=2000
-            )
-            self.low_latency_llm = self.thinking_llm
+        # Initialize unified LLM service
+        self.llm_service = LLMService(
+            thinking_model=self.config.thinking_model,
+            low_latency_model=self.config.low_latency_model
+        )
 
-        self.tool_orchestrator = ToolOrchestrator(low_latency_llm=self.low_latency_llm)
+        self.tool_orchestrator = ToolOrchestrator()
 
-        # Initialize planning service with advanced LLM for planning, low-latency for updates
+        # Initialize planning service with unified LLM service
         self.planning_service = PlanningService(
-            llm_client=self.thinking_llm,  # Use advanced LLM for initial planning
+            llm_service=self.llm_service,  # Use unified service
             tool_orchestrator=self.tool_orchestrator
         )
 
@@ -76,43 +69,16 @@ class SierraAgent:
         self.interaction_count = 0
         self.last_quality_check = 0
         self.last_analytics_update = 0
+        
+        # Clean agent - no continuation cruft
 
         logger.info("SierraAgent initialized successfully")
 
     def get_llm_status(self) -> Dict[str, Any]:
-        """Get the status of both LLM clients."""
-        return {
-            "thinking_llm": {
-                "model": self.thinking_llm.model_name,
-                "available": True,
-                "usage_stats": self.thinking_llm.get_usage_stats(),
-            },
-            "low_latency_llm": {
-                "model": self.low_latency_llm.model_name,
-                "available": True,
-                "usage_stats": self.low_latency_llm.get_usage_stats(),
-            },
-            "dual_llm_enabled": self.config.enable_dual_llm,
-        }
+        """Get the status of unified LLM service."""
+        return self.llm_service.get_service_status()
 
-    def switch_llm_mode(self, enable_dual: bool) -> None:
-        """Switch between single and dual LLM modes."""
-        if enable_dual and not self.config.enable_dual_llm:
-            print("🔄 [AGENT] Switching to dual LLM mode...")
-            self.config.enable_dual_llm = True
-            # Reinitialize low latency LLM if needed
-            if self.low_latency_llm == self.thinking_llm:
-                self.low_latency_llm = LLMClient(
-                    model_name=self.config.low_latency_model, max_tokens=1000
-                )
-                print(
-                    f"🔄 [AGENT] Low latency LLM initialized: {self.config.low_latency_model}"
-                )
-        elif not enable_dual and self.config.enable_dual_llm:
-            print("🔄 [AGENT] Switching to single LLM mode...")
-            self.config.enable_dual_llm = False
-            self.low_latency_llm = self.thinking_llm
-            print("🔄 [AGENT] Now using single LLM for all operations")
+    # LLM mode switching handled by unified service - no longer needed
 
     def start_conversation(self) -> str:
         """Start a new conversation session."""
@@ -152,6 +118,8 @@ class SierraAgent:
             # Increment interaction counter
             self.interaction_count += 1
 
+            # Simplified approach - no continuation handling
+
             # Generate plan for user request
             plan = self._generate_plan(user_input)
             print(f"🧠 [AGENT] Generated plan: {plan.plan_id}")
@@ -162,6 +130,8 @@ class SierraAgent:
             # Execute plan steps
             execution_results = self._execute_plan(plan)
             print(f"🛠️ [AGENT] Plan execution completed. Status: {plan.status}")
+
+            # Simplified - no complex continuation or context extraction logic
 
             # Generate response from plan results
             response = self._generate_response_from_plan(plan, execution_results)
@@ -220,11 +190,11 @@ class SierraAgent:
                 "session_id": self.session_id
             }
 
-            # Use PlanningService with conversation context for intelligent planning
-            planning_analysis = self.planning_service.analyze_planning_context(user_input, conversation_data)
-            
-            # Use PlanningService to create the complete plan
-            plan = self.planning_service.create_plan_from_analysis(planning_analysis, self.session_id)
+            # Use PlanningService to generate the complete plan with available data
+            available_data = conversation_data["available_data"]
+            # Type assertion to ensure mypy compatibility
+            assert isinstance(available_data, dict), "available_data should be a dict"
+            plan = self.planning_service.generate_plan(user_input, session_id=self.session_id, available_data=available_data)
 
             print(f"🧠 [PLAN] Generated plan '{plan.plan_id}' with {len(plan.steps)} steps")
             return plan
@@ -301,18 +271,19 @@ class SierraAgent:
                 execution_results["steps"].append({
                     "step_id": step.step_id,
                     "name": step.name,
+                    "tool_name": step.tool_name,
                     "success": True,
                     "result": result
                 })
 
                 print(f"✅ [EXECUTION] Step '{step.name}' completed successfully")
                 
-                # NEW: Update plan using low-latency LLM after each step
+                # Update plan using unified LLM service after each step
                 completed_results = [step_result["result"] for step_result in execution_results["steps"] 
                                    if isinstance(step_result.get("result"), ToolResult)]
                 if len(completed_results) > 0 and len(completed_results) % 2 == 0:  # Update every 2 steps to avoid too frequent calls
-                    updated_steps = self.planning_service.update_plan_with_low_latency_llm(
-                        plan, completed_results, self.low_latency_llm
+                    updated_steps = self.planning_service.update_plan_with_llm_service(
+                        plan, completed_results
                     )
                     if updated_steps:
                         print(f"🔄 [EXECUTION] Plan updated with {len(updated_steps)} new suggested steps: {updated_steps}")
@@ -333,6 +304,7 @@ class SierraAgent:
                 execution_results["steps"].append({
                     "step_id": step.step_id,
                     "name": step.name,
+                    "tool_name": step.tool_name,
                     "success": False,
                     "error": str(e)
                 })
@@ -359,6 +331,12 @@ class SierraAgent:
         if step.tool_name == "handle_general_inquiry":
             result_data = self._handle_general_inquiry(step.parameters["user_input"])
             return ToolResult(success=True, data=result_data, error=None)
+        if step.tool_name == "get_product_details":
+            result_data = self._get_product_details_from_context()
+            return ToolResult(success=True, data=result_data, error=None)
+        if step.tool_name == "format_order_status":
+            result_data = self._format_existing_order_status()
+            return ToolResult(success=True, data=result_data, error=None)
 
         # Execute business tool via orchestrator (now returns ToolResult)
         tool_mapping = {
@@ -377,7 +355,7 @@ class SierraAgent:
             )
             if not original_input:
                 print(f"⚠️ [STEP] No user input found for {step.tool_name}, available context keys: {list(context.keys())}")
-            return self.tool_orchestrator.execute_tool(step.tool_name, original_input)
+            return self.tool_orchestrator.execute_tool(step.tool_name, original_input, conversation_context=self.conversation)
         return ToolResult(
             success=False,
             error=f"Unknown tool: {step.tool_name}",
@@ -451,11 +429,8 @@ class SierraAgent:
         return dependency_data
 
     def _generate_response_from_plan(self, plan: MultiTurnPlan, execution_results: Dict[str, Any]) -> str:
-        """Generate a response based on plan execution results."""
+        """Generate a response based on plan execution results using unified LLM service."""
         print(f"💭 [RESPONSE] Generating response for plan '{plan.plan_id}'")
-
-        # Debug: Print execution results
-        print(f"💭 [RESPONSE] Execution results: {execution_results}")
 
         # Collect all successful ToolResult objects
         successful_tool_results = []
@@ -468,51 +443,22 @@ class SierraAgent:
         if not successful_tool_results:
             return "I apologize, but I'm having trouble processing your request right now. Please try again or contact our support team."
 
-        # Find the most relevant business data (prioritize business objects over extraction results)
-        primary_tool_result = None
-        for tool_result in successful_tool_results:
-            if tool_result.success and tool_result.data:
-                # Prioritize typed business objects (Order, Product, Promotion) over dicts
-                from ..data.data_types import Order, Product, Promotion
-                if isinstance(tool_result.data, (Order, Product, Promotion)):
-                    primary_tool_result = tool_result
-                    break
-
-        # If no primary business object found, use the last successful result
-        if not primary_tool_result and successful_tool_results:
-            primary_tool_result = successful_tool_results[-1]
-
-        # Get request type from conversation context (replacing intent system)
+        # Get request context
         request_type = plan.conversation_context.get("request_type", "general")
+        conversation_phase = self.conversation.conversation_state.conversation_phase
         
-        # Map request types to LLM client format
-        intent_string = {
-            "order_status": "order_status",
-            "product_inquiry": "product_inquiry", 
-            "promotion": "promotion_inquiry",
-            "general": "customer_service"
-        }.get(request_type, "customer_service")
-
-        # NEW: Build conversational context using the Conversation class
-        conversational_context = self.conversation.build_conversational_context(
-            current_tool_results=successful_tool_results,
-            intent=intent_string
+        # Use unified LLM service for response generation
+        response = self.llm_service.generate_customer_service_response(
+            user_input=plan.customer_request,
+            tool_results=successful_tool_results,
+            request_type=request_type,
+            conversation_phase=conversation_phase,
+            customer_sentiment="neutral",  # Could extract from conversation state
+            conversation_context=self.conversation,
+            use_thinking_model=False  # Use fast model for responses
         )
-
-        # Build context for LLM client with conversational context
-        context = {
-            "user_input": plan.customer_request,
-            "customer_request": plan.customer_request,
-            "primary_tool_result": primary_tool_result,  # Main ToolResult for response
-            "conversational_context": conversational_context,  # Rich conversation context
-            "intent": intent_string,
-            "sentiment": "neutral"  # Default sentiment
-        }
-
-        print(f"💭 [RESPONSE] Built context with conversational context: {len(conversational_context)} characters")
-
-        # Use LLM to generate natural response
-        response = self.tool_orchestrator.llm_client.generate_response(context)
+        
+        print(f"💭 [RESPONSE] Generated unified response ({len(response)} chars)")
         return response
 
 
@@ -733,3 +679,92 @@ class SierraAgent:
         except Exception as e:
             print(f"❌ [END] Error ending conversation: {e}")
             logger.error(f"Error ending conversation: {e}")
+
+    def _add_context_to_conversation(self, context_data: Dict[str, Any]) -> None:
+        """Add context data from tool results to conversation context."""
+        print(f"🔗 [CONTEXT] Adding context data to conversation: {list(context_data.keys())}")
+        
+        try:
+            # Store context in conversation state for future tool access
+            if not hasattr(self.conversation, 'context_storage'):
+                self.conversation.context_storage = {}
+            
+            # Merge new context with existing context
+            self.conversation.context_storage.update(context_data)
+            print(f"✅ [CONTEXT] Context added successfully. Total context keys: {len(self.conversation.context_storage)}")
+            
+        except Exception as e:
+            print(f"❌ [CONTEXT] Error adding context to conversation: {e}")
+            logger.error(f"Error adding context to conversation: {e}")
+
+    def _build_continuation_completion_prompt(self, user_input: str, tool_name: str, result: "ToolResult") -> str:
+        """Build prompt for continuation completion responses."""
+        result_summary = result.serialize_for_context() if result.success else f"Error: {result.error}"
+        conversational_context = self.conversation.build_conversational_context([result], "tool_completion")
+        
+        prompt = f"""You are a helpful customer service representative for Sierra Outfitters.
+
+The customer provided additional information to complete a {tool_name} request. Here are the results:
+
+{result_summary}
+
+{conversational_context}
+
+Please present this information to the customer in a clear, friendly, and natural way. Be specific and include all relevant details from the order information."""
+        
+        return prompt
+
+    def _get_product_details_from_context(self) -> Dict[str, Any]:
+        """Get product details from existing order context."""
+        print("📦 [PRODUCT_DETAILS] Getting product details from existing order context")
+        
+        available_data = self.conversation.get_available_data()
+        if "current_order" in available_data:
+            order = available_data["current_order"]
+            print(f"📦 [PRODUCT_DETAILS] Found order {order.order_number} with {len(order.products_ordered)} products")
+            
+            # Use the business tools to get product details for all products in the order
+            # Call with a user input that indicates we want details for the order's products
+            result = self.tool_orchestrator.execute_tool(
+                "get_product_details", 
+                f"show me details for the products in my order {order.order_number}",
+                conversation_context=self.conversation
+            )
+            
+            if result.success and result.data:
+                return result.data
+            else:
+                # Fallback: return basic order information
+                return {
+                    "order_number": order.order_number,
+                    "customer_name": order.customer_name,
+                    "products_ordered": order.products_ordered,
+                    "status": order.status,
+                    "tracking_number": order.tracking_number,
+                    "message": "Here are the product IDs in your order. For detailed product information, please visit our website or contact customer service."
+                }
+        else:
+            print("⚠️ [PRODUCT_DETAILS] No order context found")
+            return {"error": "No order context available"}
+
+    def _format_existing_order_status(self) -> Dict[str, Any]:
+        """Format existing order status for display."""
+        print("📋 [FORMAT_ORDER] Formatting existing order status")
+        
+        available_data = self.conversation.get_available_data()
+        if "current_order" in available_data:
+            order = available_data["current_order"]
+            print(f"📋 [FORMAT_ORDER] Formatting order {order.order_number}")
+            
+            return {
+                "order_number": order.order_number,
+                "customer_name": order.customer_name,
+                "email": order.email,
+                "products_ordered": order.products_ordered,
+                "status": order.status,
+                "tracking_number": order.tracking_number,
+                "formatted": True
+            }
+        else:
+            print("⚠️ [FORMAT_ORDER] No order context found")
+            return {"error": "No order context available"}
