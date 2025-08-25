@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from sierra_agent.data.data_types import (
-    MultiTurnPlan,
     Order,
     Product,
     Promotion,
@@ -78,7 +77,7 @@ class PlanUpdateContext(BaseContext):
     context_type: ContextType = ContextType.PLAN_UPDATE
 
     # Plan information (all fields need defaults due to BaseContext having defaults)
-    original_plan: Optional[MultiTurnPlan] = None
+    # Removed original_plan field - no longer needed with EvolvingPlan system
     execution_results: List[ToolResult] = field(default_factory=list)
     remaining_steps: List[str] = field(default_factory=list)
     available_tools: List[str] = field(default_factory=list)
@@ -138,23 +137,7 @@ class ContextBuilder:
         )
 
 
-    def build_plan_update_context(
-        self,
-        user_input: str,
-        original_plan: MultiTurnPlan,
-        execution_results: List[ToolResult],
-        remaining_steps: Optional[List[str]] = None,
-        available_tools: Optional[List[str]] = None
-    ) -> PlanUpdateContext:
-        """Build strongly-typed context for plan updates."""
-
-        return PlanUpdateContext(
-            user_input=user_input,
-            original_plan=original_plan,
-            execution_results=execution_results,
-            remaining_steps=remaining_steps or [],
-            available_tools=available_tools or []
-        )
+    # Removed build_plan_update_context - no longer needed with EvolvingPlan system
 
 
     def _extract_minimal_history(self, conversation_context, limit: int = 2) -> List[MinimalHistoryItem]:
@@ -332,15 +315,19 @@ Current Business Data:
 {business_data}
 
 Instructions:
-- Provide a helpful, outdoor-spirited response using ONLY the business data above
-- Reference specific identifiers (order numbers, SKUs, names) when relevant
+- Provide a helpful, accurate response using ONLY the business data above
+- Reference specific identifiers (order numbers, SKUs, names) exactly as provided
 - Be specific and include relevant details from the data
 - If referencing previous interactions, use the exact identifiers provided
 - If no relevant data is available, explain what information you need
 - CRITICAL: Never invent, assume, or hallucinate product details, names, or SKUs not in the data
+- CRITICAL: Use the EXACT product names and descriptions as provided in the business data
 - If some products are missing from the data, acknowledge what you found and what's missing
 - For product recommendations, only suggest items that exist in your actual data
-- Include outdoor enthusiasm and occasional adventure phrases naturally"""
+- If asked for recommendations but no recommendation data is provided, offer to look up specific recommendations rather than inventing products
+- If the actual products don't match outdoor themes, be honest about what they are
+- Include outdoor enthusiasm naturally when appropriate, but accuracy comes first
+- NEVER make up product names, SKUs, or descriptions that aren't in the provided business data"""
 
 
     def build_planning_prompt(self, context: PlanningContext) -> str:
@@ -393,7 +380,7 @@ Respond with ONLY a JSON array of tool names from the available tools list, no o
         return f"""You are updating a customer service plan based on execution results.
 
 Original Request: "{context.user_input}"
-Plan ID: {context.original_plan.plan_id if context.original_plan else "no_plan"}
+Plan ID: no_plan
 
 Execution Results So Far:
 {execution_summary}

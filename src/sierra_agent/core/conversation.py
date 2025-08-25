@@ -378,7 +378,7 @@ class Conversation:
 
                         elif data_type == "list" and tool_result.data and "recent_products" not in available:
                             # Check if it's products
-                            if hasattr(tool_result.data[0], "product_name"):
+                            if isinstance(tool_result.data, list) and tool_result.data and hasattr(tool_result.data[0], "product_name"):
                                 available["recent_products"] = tool_result.data
 
         return available

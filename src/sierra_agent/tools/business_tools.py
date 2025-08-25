@@ -104,16 +104,29 @@ class BusinessTools:
     def get_product_recommendations(self, category: Optional[str] = None, preferences: Optional[List[str]] = None) -> ToolResult:
         """Get product recommendations based on category and preferences."""
 
-        # Get recommendations from DataProvider
+        recommendations = []
+        
         if category:
             recommendations = self.data_provider.get_products_by_category(category)
         elif preferences:
-            # Use search to find products based on preferences
-            search_terms = " ".join(preferences)
-            recommendations = self.data_provider.search_products(search_terms)
+            # Search for each preference term individually and combine results
+            seen_skus = set()
+            for term in preferences:
+                term_results = self.data_provider.search_products(term)
+                for product in term_results:
+                    if product.sku not in seen_skus:
+                        recommendations.append(product)
+                        seen_skus.add(product.sku)
         else:
-            # Default to outdoor products
-            recommendations = self.data_provider.search_products("outdoor")[:5]
+            # Default to outdoor products with fallback
+            recommendations = self.data_provider.search_products("outdoor")
+            if len(recommendations) < 3:
+                # Add more products with other broad terms
+                additional = self.data_provider.search_products("adventure")
+                seen_skus = {p.sku for p in recommendations}
+                for product in additional:
+                    if product.sku not in seen_skus:
+                        recommendations.append(product)
 
         if not recommendations:
             return ToolResult(
@@ -122,7 +135,8 @@ class BusinessTools:
                 data=None
             )
 
-        return ToolResult(success=True, data=recommendations, error=None)
+        # Limit to 5 recommendations
+        return ToolResult(success=True, data=recommendations[:5], error=None)
 
     def get_company_info(self) -> ToolResult:
         """Get company information."""

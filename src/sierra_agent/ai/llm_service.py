@@ -66,142 +66,8 @@ class LLMService:
 
             return self._get_fallback_customer_service_response(user_input)
 
-    def generate_planning_suggestions(
-        self,
-        user_input: str,
-        available_data: Optional[Dict[str, Any]] = None,
-        available_tools: Optional[List[str]] = None,
-        conversation_phase: str = "greeting",
-        current_topic: str = "general",
-        max_steps: int = 5,
-        conversation_context=None
-    ) -> List[str]:
-        """Generate intelligent planning suggestions using unified context system."""
-
-        try:
-            # Build strongly-typed planning context
-            context = self.context_builder.build_planning_context(
-                user_input=user_input,
-                available_data=available_data or {},
-                available_tools=available_tools or [],
-                conversation_phase=conversation_phase,
-                current_topic=current_topic,
-                max_steps=max_steps,
-                conversation_context=conversation_context
-            )
-
-            # Build planning prompt
-            prompt = self.prompt_builder.build_planning_prompt(context)
-
-            # Use thinking model for complex planning decisions
-
-            response = self.thinking_client.call_llm(prompt, temperature=0.3)
-
-            # Parse JSON response
-            suggested_tools = self._parse_json_tool_list(response)
-
-            # Validate tools are available
-            return self._validate_suggested_tools(suggested_tools, available_tools or [])
 
 
-        except Exception as e:
-            logger.exception(f"Error generating planning suggestions: {e}")
-
-            return self._get_fallback_planning_suggestions(user_input, available_data)
-
-    def update_plan_suggestions(
-        self,
-        user_input: str,
-        original_plan,
-        execution_results: List,
-        remaining_steps: Optional[List[str]] = None,
-        available_tools: Optional[List[str]] = None
-    ) -> List[str]:
-        """Generate plan update suggestions using unified context system."""
-
-        try:
-            # Build strongly-typed plan update context
-            context = self.context_builder.build_plan_update_context(
-                user_input=user_input,
-                original_plan=original_plan,
-                execution_results=execution_results,
-                remaining_steps=remaining_steps or [],
-                available_tools=available_tools or []
-            )
-
-            # Build plan update prompt
-            prompt = self.prompt_builder.build_plan_update_prompt(context)
-
-            # Use low-latency model for quick plan updates
-
-            response = self.low_latency_client.call_llm(prompt, temperature=0.3)
-
-            # Parse JSON response
-            suggested_tools = self._parse_json_tool_list(response)
-
-            # Validate tools are available
-            return self._validate_suggested_tools(suggested_tools, available_tools or [])
-
-
-        except Exception as e:
-            logger.exception(f"Error generating plan update suggestions: {e}")
-
-            return []  # Conservative fallback - no additional steps
-
-    def _parse_json_tool_list(self, response: str) -> List[str]:
-        """Parse JSON tool list from LLM response."""
-
-        try:
-            # Look for JSON array pattern
-            json_match = re.search(r"\[(.*?)\]", response, re.DOTALL)
-            if json_match:
-                json_str = "[" + json_match.group(1) + "]"
-                tools = json.loads(json_str)
-
-                # Ensure all items are strings
-                return [str(tool).strip('"\'') for tool in tools if tool]
-
-
-            return []
-
-        except json.JSONDecodeError:
-
-            # Try to extract tool names from text
-            return self._extract_tools_from_text(response)
-        except Exception:
-
-            return []
-
-    def _extract_tools_from_text(self, response: str) -> List[str]:
-        """Extract tool names from text response as fallback."""
-
-        known_tools = [
-            "get_order_status", "search_products", "get_product_details",
-            "get_product_recommendations", "get_early_risers_promotion",
-            "get_company_info", "get_contact_info", "get_policies"
-        ]
-
-        found_tools = []
-        response_lower = response.lower()
-
-        for tool in known_tools:
-            if tool in response_lower:
-                found_tools.append(tool)
-
-        return found_tools
-
-    def _validate_suggested_tools(self, suggested_tools: List[str], available_tools: List[str]) -> List[str]:
-        """Validate that suggested tools are actually available."""
-        if not available_tools:
-            # If no available tools list provided, trust the suggestions
-            return suggested_tools
-
-        validated = [tool for tool in suggested_tools if tool in available_tools]
-
-        if len(validated) != len(suggested_tools):
-            [tool for tool in suggested_tools if tool not in available_tools]
-
-        return validated
 
     def _get_fallback_customer_service_response(self, user_input: str) -> str:
         """Generate fallback response when LLM fails."""
@@ -220,26 +86,303 @@ Thank you for your patience!
 - Sierra Outfitters Customer Service Team"""
 
     def _get_fallback_planning_suggestions(self, user_input: str, available_data: Optional[Dict[str, Any]] = None) -> List[str]:
-        """Generate rule-based planning suggestions as fallback."""
+        """Generate context-aware fallback planning suggestions."""
 
         user_lower = user_input.lower()
         suggestions = []
 
-        # Simple rule-based fallback logic
-        if any(word in user_lower for word in ["order", "track", "delivery", "shipping"]):
+        # Check for vague requests that should use context
+        vague_requests = ["anything else", "what else", "more", "other", "else", "next", "additionally", "further"]
+        is_vague = any(phrase in user_lower for phrase in vague_requests) or len(user_input.strip()) < 10
+
+        if is_vague and available_data:
+            # Context-aware suggestions for vague requests
+            if "current_order" in available_data:
+                # If we have order data, suggest product details or recommendations
+                suggestions.append("get_product_details")
+                suggestions.append("get_product_recommendations")
+                suggestions.append("get_early_risers_promotion")
+            else:
+                suggestions.append("search_products")
+                suggestions.append("get_company_info")
+        
+        # Explicit keyword-based requests
+        elif any(word in user_lower for word in ["order", "track", "delivery", "shipping"]):
             if not (available_data and "current_order" in available_data):
                 suggestions.append("get_order_status")
 
         elif any(word in user_lower for word in ["product", "recommend", "looking for", "search"]):
-            suggestions.append("search_products")
+            if available_data and "current_order" in available_data:
+                suggestions.append("get_product_recommendations")
+            else:
+                suggestions.append("search_products")
 
         elif any(word in user_lower for word in ["promotion", "discount", "code", "sale"]):
             suggestions.append("get_early_risers_promotion")
 
         else:
-            suggestions.append("get_company_info")
+            # Default fallback - still try to be contextual
+            if available_data and "current_order" in available_data:
+                suggestions.append("get_product_recommendations")
+            else:
+                suggestions.append("get_company_info")
 
         return suggestions
+
+    def analyze_vague_request_and_suggest(self, user_input: str, available_data: Optional[Dict[str, Any]] = None, conversation_context: Optional[str] = None, available_tools: Optional[List[str]] = None) -> List[str]:
+        """Use LLM to analyze requests and suggest the right sequence of actions."""
+        try:
+            # Build a specialized prompt for vague request analysis
+            context_summary = ""
+            if available_data:
+                context_items = []
+                if "current_order" in available_data:
+                    order = available_data["current_order"]
+                    context_items.append(f"Customer has order {getattr(order, 'order_number', 'unknown')} with status {getattr(order, 'status', 'unknown')}")
+                if "found_products" in available_data:
+                    products = available_data["found_products"]
+                    if isinstance(products, list) and products:
+                        context_items.append(f"Customer has viewed {len(products)} products")
+                if "customer_email" in available_data:
+                    context_items.append("Customer email is known")
+                
+                context_summary = " | ".join(context_items)
+            
+            conversation_info = f"\nConversation Context: {conversation_context}" if conversation_context else ""
+            
+            # Use provided tools or default set
+            tools_list = available_tools or [
+                "get_order_status", "get_product_details", "search_products",
+                "get_product_recommendations", "get_early_risers_promotion",
+                "get_company_info", "get_contact_info", "get_policies"
+            ]
+            
+            # Enhanced tool descriptions with parameters and usage
+            tool_descriptions = {
+                "get_order_status": "get_order_status(email, order_number) - Get order details, status, and tracking info",
+                "get_product_details": "get_product_details(skus: List[str]) - Get detailed product information for specific SKUs",
+                "search_products": "search_products(query: str) - Search products by name/description/tags",
+                "get_product_recommendations": "get_product_recommendations(category=None, preferences=None) - Get product recommendations",
+                "get_early_risers_promotion": "get_early_risers_promotion() - Check Early Risers promotion (8-10 AM PT)",
+                "get_company_info": "get_company_info() - Get Sierra Outfitters company information",
+                "get_contact_info": "get_contact_info() - Get contact details and social media",
+                "get_policies": "get_policies() - Get return, shipping, and warranty policies"
+            }
+            
+            tools_description = "\n".join([
+                f"- {tool_descriptions.get(tool, tool)}" for tool in tools_list
+            ])
+            
+            prompt = f"""You are an intelligent customer service workflow planner for Sierra Outfitters outdoor gear company. Your job is to analyze what the customer wants and determine the best response approach.
+
+Customer Request: "{user_input}"
+Available Context: {context_summary or "No context available"}{conversation_info}
+
+Available Tools:
+{tools_description}
+
+STEP 1 - ANALYZE THE REQUEST TYPE:
+
+A) CONVERSATIONAL REQUESTS (respond conversationally, no tools needed):
+   - Greetings: "hello", "hi", "hey" (standalone, not followed by specific requests) → return "conversational_response"
+   - Thanks: "thanks", "thank you" → return "conversational_response"  
+   - General help: "I need help", "can you help" (without any context or specifics) → return "conversational_response"
+   - General questions: "what can you do", "what services" → return "conversational_response"
+   - IMPORTANT: If user provides email, order numbers, or specific product info, DO NOT treat as conversational
+
+B) INFORMATION REQUESTS (use tools to get specific data):
+   - Order questions: "my order", "order status", "track order" + email/order# → get_order_status
+   - Product search: "show me", "what products", "looking for [product]" → search_products
+   - Product details: "tell me about [specific product]" → search_products (then get_product_details if found)
+   - Order product details: "products I ordered", "what did I order", "items in my order" (with order context) → get_product_details
+   - Recommendations: "recommend", "suggest products" → get_product_recommendations
+   - Promotions: "discount", "promotion", "deal", "early risers", "tell me about early risers" → get_early_risers_promotion
+   - Company info: "about company", "contact" → get_company_info
+
+C) MULTI-STEP REQUESTS (use multiple tools in sequence):
+   - "check my order and give recommendations" → get_order_status,get_product_recommendations
+   - "tell me about the products I ordered and give recommendations" → get_product_details,get_product_recommendations
+   - "show me products and tell me about deals" → search_products,get_early_risers_promotion
+
+STEP 2 - CHECK FOR MISSING INFORMATION:
+   - For get_order_status(email, order_number): need email AND order number
+   - For get_product_details(skus): need specific product SKUs (from order context or user)
+   - For search_products(query): need search terms (product name, category, etc.)
+   - For get_product_recommendations: can use order context or customer preferences
+   - If missing required parameters: return "wait_for_missing_info"
+
+STEP 3 - DETERMINE RESPONSE:
+   - Conversational requests: return "conversational_response"
+   - Single tool needed: return the tool name
+   - Multiple tools needed: return comma-separated tool names
+   - Missing info: return "wait_for_missing_info"
+
+EXAMPLES:
+- "hello" → "conversational_response"
+- "thanks for your help" → "conversational_response"
+- "I need help" (no context) → "conversational_response"
+- "george.hill@example.com" (just email provided) → "wait_for_missing_info"
+- "do you have promotions?" → "get_early_risers_promotion"
+- "tell me about early risers" → "get_early_risers_promotion"
+- "early risers discount" → "get_early_risers_promotion"
+- "tell me about the backpack" → "search_products"
+- "my order george.hill@example.com #W009" → "get_order_status"
+- "tell me about my order" (no email/order#) → "wait_for_missing_info"
+- "#W009" (with email in context) → "get_order_status"
+- "give me recommendations based on my order" (with order in context) → "get_product_recommendations"
+- "tell me about the products I ordered and give recommendations" → "get_product_details,get_product_recommendations"
+- "I want" (incomplete) → "conversational_response"
+
+Return only the response type or tool name(s), nothing else."""
+
+            response = self.low_latency_client.call_llm(prompt, temperature=0.1)
+            
+            # Extract and parse actions from the response (handle comma-separated multiple actions)
+            response = response.strip().strip('"').strip("'").lower()
+            
+            # Parse multiple actions if comma-separated
+            if ',' in response:
+                suggested_actions = [action.strip() for action in response.split(',')]
+            else:
+                suggested_actions = [response]
+            
+            # Handle special actions that aren't real tools
+            if 'wait_for_missing_info' in suggested_actions:
+                return ['wait_for_missing_info']
+            
+            if 'conversational_response' in suggested_actions:
+                return ['conversational_response']
+            
+            # Validate all actions are real
+            valid_actions = tools_list
+            validated_actions = []
+            
+            for action in suggested_actions:
+                if action in valid_actions:
+                    validated_actions.append(action)
+                else:
+                    # Try to find action within longer text
+                    found_action = None
+                    for valid_action in valid_actions:
+                        if valid_action in action:
+                            found_action = valid_action
+                            break
+                    if found_action:
+                        validated_actions.append(found_action)
+            
+            if validated_actions:
+                return validated_actions
+            else:
+                # Fall back to context-aware suggestion
+                return self._get_fallback_planning_suggestions(user_input, available_data)
+                
+        except Exception as e:
+            logger.exception(f"Error in vague request analysis: {e}")
+            return self._get_fallback_planning_suggestions(user_input, available_data)
+
+    def generate_recommendation_search_terms(self, order_context: Optional[Dict[str, Any]] = None, product_context: Optional[List[Any]] = None) -> str:
+        """Use LLM to generate intelligent search terms for product recommendations based on order/product context."""
+        try:
+            # Build context summary for the LLM
+            context_parts = []
+            
+            if order_context and "current_order" in order_context:
+                order = order_context["current_order"]
+                order_info = f"Customer has ordered: {', '.join(getattr(order, 'products_ordered', []))}"
+                context_parts.append(order_info)
+            
+            if product_context:
+                product_names = []
+                product_descriptions = []
+                for product in product_context:
+                    if hasattr(product, 'product_name'):
+                        product_names.append(product.product_name)
+                    if hasattr(product, 'description'):
+                        product_descriptions.append(product.description[:100])  # Limit length
+                
+                if product_names:
+                    context_parts.append(f"Products: {', '.join(product_names)}")
+                if product_descriptions:
+                    context_parts.append(f"Descriptions: {'. '.join(product_descriptions)}")
+            
+            if not context_parts:
+                return "outdoor adventure gear"
+            
+            context_summary = " | ".join(context_parts)
+            
+            prompt = f"""Based on the customer's order and product context, generate the best search terms for finding complementary or related outdoor products.
+
+Context: {context_summary}
+
+Instructions:
+1. Analyze what the customer has already ordered/viewed
+2. Think about what complementary products would be useful for their outdoor activities
+3. Generate search terms that would find related gear, accessories, or complementary items
+4. Focus on outdoor/adventure terms that match their interests
+5. Return only the search terms, nothing else
+
+Examples:
+- If they ordered hiking boots: "hiking socks gear trekking poles"  
+- If they ordered a tent: "sleeping bags camping cookware"
+- If they ordered backpack: "water bottles hiking gear outdoor"
+
+Response: Just the search terms (e.g., "hiking camping outdoor gear")"""
+
+            response = self.low_latency_client.call_llm(prompt, temperature=0.2)
+            
+            # Clean up the response and return just the search terms
+            search_terms = response.strip().strip('"').strip("'").lower()
+            
+            # Validate it's reasonable (not empty, not too long)
+            if search_terms and len(search_terms) < 100:
+                return search_terms
+            else:
+                return "outdoor adventure gear"
+                
+        except Exception as e:
+            logger.exception(f"Error generating recommendation search terms: {e}")
+            return "outdoor adventure gear"
+
+    def validate_tool_addressed_request(self, user_request: str, tool_executed: str, tool_result_summary: str, conversation_context: Optional[str] = None) -> Dict[str, Any]:
+        """Use LLM to check if the executed tool actually addressed what the user asked for."""
+        try:
+            context_info = f"\nConversation Context: {conversation_context}" if conversation_context else ""
+            
+            prompt = f"""Analyze if the executed tool properly addressed the user's request.
+
+User Request: "{user_request}"
+Tool Executed: {tool_executed}  
+Tool Result: {tool_result_summary}{context_info}
+
+Instructions:
+1. Did the executed tool directly address what the user asked for?
+2. If user asked about "order" but tool got "contact info", that's WRONG
+3. If user provided order number but tool got "company info", that's WRONG  
+4. If user asked for recommendations but tool got random products, that's WRONG
+
+Respond with JSON:
+{{"addressed": true/false, "reason": "explanation", "missing_request": "specific question to ask user or null"}}
+
+Examples:
+- User: "tell me about my order", Tool: "get_contact_info" → {{"addressed": false, "reason": "user wanted order info but got contact info", "missing_request": "I need your order number to look up your order."}}
+- User: "george@email.com", Tool: "get_company_info" → {{"addressed": false, "reason": "user provided email for order lookup but got company info", "missing_request": "Great! I have your email. Now I need your order number."}}
+- User: "#W006", Tool: "get_order_status" → {{"addressed": true, "reason": "order number provided and order lookup performed", "missing_request": null}}"""
+
+            response = self.low_latency_client.call_llm(prompt, temperature=0.1)
+            
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response.strip())
+                return result
+            except json.JSONDecodeError:
+                # Fallback parsing if JSON is malformed
+                addressed = "true" in response.lower() and "false" not in response.lower()
+                return {"addressed": addressed, "reason": "parsing failed", "missing": None}
+                
+        except Exception as e:
+            logger.exception(f"Error validating tool request: {e}")
+            return {"addressed": True, "reason": "validation failed", "missing": None}
 
     def get_service_status(self) -> Dict[str, Any]:
         """Get status of the LLM service."""
