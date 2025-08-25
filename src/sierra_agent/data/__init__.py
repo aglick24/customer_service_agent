@@ -2,7 +2,6 @@
 
 from .data_types import (
     ConversationState,
-    IntentType,
     MultiTurnPlan,
     Order,
     PlanStatus,
@@ -12,7 +11,6 @@ from .data_types import (
 
 __all__ = [
     "ConversationState",
-    "IntentType",
     "MultiTurnPlan",
     "Order",
     "PlanStatus",

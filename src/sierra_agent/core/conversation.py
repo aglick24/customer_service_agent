@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ..data.data_types import IntentType, ToolResult
+from ..data.data_types import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class CustomerContext:
     preferences: Dict[str, Any] = field(default_factory=dict)
     conversation_topics: List[str] = field(default_factory=list)
     sentiment_history: List[str] = field(default_factory=list) # Changed from SentimentType to str
-    intent_history: List[IntentType] = field(default_factory=list)
+    # Removed intent_history - no longer using IntentType
     last_interaction: Optional[datetime] = None
 
     def update_sentiment(self, sentiment: str) -> None: # Changed from SentimentType to str
@@ -76,7 +76,7 @@ class CustomerContext:
             "preferences": self.preferences,
             "conversation_topics": self.conversation_topics,
             "sentiment_history": self.sentiment_history, # Changed from SentimentType to str
-            "intent_history": [i.value for i in self.intent_history],
+            # Removed intent_history - no longer tracking intents
             "last_interaction": self.last_interaction.isoformat()
             if self.last_interaction
             else None,
@@ -115,6 +115,7 @@ class Conversation:
         self.quality_score: Optional[float] = None
         self.start_time = datetime.now()
         self.last_activity = datetime.now()
+            
         print("💬 [CONVERSATION] Conversation initialized successfully")
         logger.info("New conversation initialized")
 
@@ -418,6 +419,30 @@ class Conversation:
 
         print("🧹 [CONVERSATION] Conversation cleared and reset")
         logger.info("Conversation cleared and reset")
+
+    def get_available_data(self) -> Dict[str, Any]:
+        """Get all data available from previous tool results."""
+        print("📋 [CONVERSATION] Getting available data from conversation history...")
+        available = {}
+        
+        # Get recent tool results from messages
+        for message in reversed(self.messages):
+            if message.tool_results:
+                for tool_result in message.tool_results:
+                    if tool_result.success and tool_result.data:
+                        data_type = type(tool_result.data).__name__
+                        if data_type == "Order":
+                            available["current_order"] = tool_result.data
+                            print(f"📋 [CONVERSATION] Found order data: {tool_result.data.order_number}")
+                        elif data_type == "list" and tool_result.data:
+                            # Check if it's products
+                            if hasattr(tool_result.data[0], 'product_name'):
+                                available["recent_products"] = tool_result.data
+                                print(f"📋 [CONVERSATION] Found {len(tool_result.data)} products")
+        
+        print(f"📋 [CONVERSATION] Available data keys: {list(available.keys())}")
+        return available
+    
 
     def export_conversation(self) -> Dict[str, Any]:
         """Export conversation data for analysis."""

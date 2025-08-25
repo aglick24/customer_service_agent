@@ -13,9 +13,7 @@ from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from ..data.data_types import (
-    IntentType,
-)
+# IntentType removed - using simple strings for request types
 
 # Load environment variables
 load_dotenv()

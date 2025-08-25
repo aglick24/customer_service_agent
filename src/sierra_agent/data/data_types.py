@@ -13,19 +13,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
-class IntentType(Enum):
-    """Customer intent types for planning."""
-    ORDER_STATUS = "ORDER_STATUS"
-    PRODUCT_INQUIRY = "PRODUCT_INQUIRY"
-    EARLY_RISERS_PROMOTION = "EARLY_RISERS_PROMOTION"
-    GENERAL_INQUIRY = "GENERAL_INQUIRY"
-    COMPLAINT = "COMPLAINT"
-    CUSTOMER_SERVICE = "CUSTOMER_SERVICE"
-    RETURN_REQUEST = "RETURN_REQUEST"
-    SHIPPING_INFO = "SHIPPING_INFO"
-    PROMOTION_INQUIRY = "PROMOTION_INQUIRY"
-
-
 class PlanStatus(Enum):
     """Status of plan execution."""
     PENDING = "PENDING"
@@ -133,13 +120,12 @@ class PlanStep:
 class MultiTurnPlan:
     """A plan for multi-turn conversation execution."""
     plan_id: str
-    intent: IntentType
     customer_request: str
     steps: List[PlanStep]
+    conversation_context: Dict[str, Any] = field(default_factory=dict)  # Structured planning + execution context
     current_step_index: int = 0
     status: PlanStatus = PlanStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
-    conversation_context: Dict[str, Any] = field(default_factory=dict)
     max_turns: int = 5
     current_turn: int = 1
 
@@ -160,7 +146,10 @@ class MultiTurnPlan:
     def print_plan(self) -> None:
         """Print the plan in a readable format."""
         print(f"\n📋 Plan: {self.plan_id}")
-        print(f"   Intent: {self.intent.value}")
+        # Show conversation context summary instead of intent
+        planning_context = self.conversation_context.get("planning", {})
+        if planning_context:
+            print(f"   Context: {planning_context.get('conversation_phase', 'unknown')} | {planning_context.get('current_topic', 'general')}")
         print(f"   Status: {self.status.value}")
         print(f"   Customer Request: {self.customer_request}")
         print(f"   Steps ({len(self.steps)}):")
@@ -174,7 +163,6 @@ class MultiTurnPlan:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "plan_id": self.plan_id,
-            "intent": self.intent.value,
             "customer_request": self.customer_request,
             "steps": [step.to_dict() for step in self.steps],
             "current_step_index": self.current_step_index,

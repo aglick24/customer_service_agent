@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..ai.llm_client import LLMClient
-from ..data.data_types import IntentType, ToolResult
+from ..data.data_types import ToolResult
 from .business_tools import BusinessTools
 
 logger = logging.getLogger(__name__)
@@ -189,12 +189,12 @@ class ToolOrchestrator:
         logger.info("Tool execution cache cleared")
 
     def get_cached_result(
-        self, intent: IntentType, user_input: str
+        self, request_type: str, user_input: str
     ) -> Optional[Dict[str, Any]]:
         """Get cached result if available and not expired."""
-        print(f"🔍 [ORCHESTRATOR] Checking cache for intent: {intent}")
+        print(f"🔍 [ORCHESTRATOR] Checking cache for request type: {request_type}")
 
-        cache_key = f"{intent.value}_{hash(user_input)}"
+        cache_key = f"{request_type}_{hash(user_input)}"
 
         if cache_key in self.tool_cache:
             cached_data = self.tool_cache[cache_key]

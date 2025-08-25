@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from ..ai.llm_client import LLMClient
 from ..core.conversation import Conversation
+from ..core.planning_service import PlanningService
 from ..data.data_types import (
-    IntentType,
     MultiTurnPlan,
     PlanStatus,
     PlanStep,
@@ -66,6 +66,11 @@ class SierraAgent:
 
         self.tool_orchestrator = ToolOrchestrator(low_latency_llm=self.low_latency_llm)
 
+        # Initialize planning service with advanced LLM for planning, low-latency for updates
+        self.planning_service = PlanningService(
+            llm_client=self.thinking_llm,  # Use advanced LLM for initial planning
+            tool_orchestrator=self.tool_orchestrator
+        )
 
         self.session_id: Optional[str] = None
         self.interaction_count = 0
@@ -170,7 +175,7 @@ class SierraAgent:
             self.conversation.add_ai_message_with_results(
                 content=response,
                 tool_results=successful_tool_results,
-                intent=str(plan.intent.value) if plan.intent else None,
+                intent=None,  # No longer using intent
                 plan_id=plan.plan_id
             )
 
@@ -207,133 +212,47 @@ class SierraAgent:
         print(f"🧠 [PLAN] Generating plan for: '{user_input[:50]}{'...' if len(user_input) > 50 else ''}'")
 
         try:
-            # Analyze the request to determine what needs to be done
-            plan_context = self._analyze_request(user_input)
+            # Get conversation data for planning context
+            conversation_data = {
+                "available_data": self.conversation.get_available_data(),
+                "conversation_phase": self.conversation.conversation_state.conversation_phase,
+                "current_topic": self.conversation.conversation_state.current_topic,
+                "session_id": self.session_id
+            }
 
-            # Generate plan steps based on the request
-            steps = self._generate_plan_steps(user_input, plan_context)
+            # Use PlanningService with conversation context for intelligent planning
+            planning_analysis = self.planning_service.analyze_planning_context(user_input, conversation_data)
+            
+            # Use PlanningService to create the complete plan
+            plan = self.planning_service.create_plan_from_analysis(planning_analysis, self.session_id)
 
-            # Create the plan
-            plan_id = f"plan_{uuid.uuid4().hex[:8]}"
-
-            # Get intent from context (now always an IntentType enum)
-            intent_enum = plan_context.get("primary_intent", IntentType.GENERAL_INQUIRY)
-
-            plan = MultiTurnPlan(
-                plan_id=plan_id,
-                intent=intent_enum,
-                customer_request=user_input,
-                steps=steps,
-                status=PlanStatus.PENDING,
-                created_at=datetime.now(),
-                conversation_context={"session_id": self.session_id, "original_request": user_input}
-            )
-
-            print(f"🧠 [PLAN] Generated plan '{plan_id}' with {len(steps)} steps")
+            print(f"🧠 [PLAN] Generated plan '{plan.plan_id}' with {len(plan.steps)} steps")
             return plan
 
         except Exception as e:
             print(f"❌ [PLAN] Error generating plan: {e}")
-            # Create a fallback plan
-            return self._create_fallback_plan(user_input)
-
-    def _analyze_request(self, user_input: str) -> Dict[str, Any]:
-        """Analyze the user request to understand what needs to be done."""
-        print(f"🔍 [ANALYSIS] Analyzing request: '{user_input[:30]}{'...' if len(user_input) > 30 else ''}'")
-
-        user_lower = user_input.lower()
-        context: Dict[str, Any] = {"request_type": "general", "complexity": "simple"}
-
-        # Detect order-related requests
-        if any(keyword in user_lower for keyword in ["order", "track", "delivery", "shipping", "#w", "order number"]):
-            context["request_type"] = "order_status"
-            context["primary_intent"] = IntentType.ORDER_STATUS
-
-        # Detect product-related requests
-        elif any(keyword in user_lower for keyword in ["product", "recommend", "looking for", "need", "buy", "search"]):
-            context["request_type"] = "product_inquiry"
-            context["primary_intent"] = IntentType.PRODUCT_INQUIRY
-
-        # Detect promotion requests
-        elif any(keyword in user_lower for keyword in ["discount", "promotion", "code", "early risers", "sale"]):
-            context["request_type"] = "promotion"
-            context["primary_intent"] = IntentType.EARLY_RISERS_PROMOTION
-
-        # Detect complex multi-part requests
-        if len(user_input.split()) > 20 or "and" in user_lower or "also" in user_lower:
-            context["complexity"] = "complex"
-
-        print(f"🔍 [ANALYSIS] Request type: {context['request_type']}, complexity: {context['complexity']}")
-        return context
-
-    def _generate_plan_steps(self, user_input: str, context: Dict[str, Any]) -> List[PlanStep]:
-        """Generate specific plan steps based on the request context."""
-        import uuid
-
-        steps = []
-        request_type = context.get("request_type", "general")
-
-        if request_type == "order_status":
-            extract_step = PlanStep(
+            # Use PlanningService fallback plan generation
+            fallback_step = PlanStep(
                 step_id=f"step_{uuid.uuid4().hex[:8]}",
-                name="Extract Order Information",
-                description="Extract email and order number from user input",
-                tool_name="extract_order_info",
+                name="General Assistance",
+                description="Provide general customer service help",
+                tool_name="handle_general_inquiry",
                 parameters={"user_input": user_input}
             )
-            order_step = PlanStep(
-                step_id=f"step_{uuid.uuid4().hex[:8]}",
-                name="Get Order Status",
-                description="Retrieve order status and tracking information",
-                tool_name="get_order_status",
-                parameters={},
-                dependencies=[extract_step.step_id]
-            )
-            steps.extend([extract_step, order_step])
-
-        elif request_type == "product_inquiry":
-            analyze_step = PlanStep(
-                step_id=f"step_{uuid.uuid4().hex[:8]}",
-                name="Understand Product Needs",
-                description="Analyze what the customer is looking for",
-                tool_name="analyze_product_request",
-                parameters={"user_input": user_input}
-            )
-            search_step = PlanStep(
-                step_id=f"step_{uuid.uuid4().hex[:8]}",
-                name="Search Products",
-                description="Search and recommend relevant products",
-                tool_name="search_products",
-                parameters={},
-                dependencies=[analyze_step.step_id]
-            )
-            steps.extend([analyze_step, search_step])
-
-        elif request_type == "promotion":
-            steps.append(
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Check Early Risers Promotion",
-                    description="Verify time and generate promotion code if eligible",
-                    tool_name="get_early_risers_promotion",
-                    parameters={"user_input": user_input}
-                )
+            
+            return MultiTurnPlan(
+                plan_id=f"fallback_{uuid.uuid4().hex[:8]}",
+                customer_request=user_input,
+                steps=[fallback_step],
+                conversation_context={
+                    "planning": {"fallback": True, "reason": "plan_generation_failed"},
+                    "execution": {"session_id": self.session_id, "original_request": user_input}
+                },
+                status=PlanStatus.PENDING,
+                created_at=datetime.now()
             )
 
-        else:
-            # General inquiry - create adaptive plan
-            steps.append(
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Handle General Inquiry",
-                    description="Provide general customer service assistance",
-                    tool_name="handle_general_inquiry",
-                    parameters={"user_input": user_input}
-                )
-            )
 
-        print(f"🛠️ [STEPS] Generated {len(steps)} plan steps for {request_type}")
-        return steps
 
     def _execute_plan(self, plan: MultiTurnPlan) -> Dict[str, Any]:
         """Execute all steps in the plan."""
@@ -387,6 +306,16 @@ class SierraAgent:
                 })
 
                 print(f"✅ [EXECUTION] Step '{step.name}' completed successfully")
+                
+                # NEW: Update plan using low-latency LLM after each step
+                completed_results = [step_result["result"] for step_result in execution_results["steps"] 
+                                   if isinstance(step_result.get("result"), ToolResult)]
+                if len(completed_results) > 0 and len(completed_results) % 2 == 0:  # Update every 2 steps to avoid too frequent calls
+                    updated_steps = self.planning_service.update_plan_with_low_latency_llm(
+                        plan, completed_results, self.low_latency_llm
+                    )
+                    if updated_steps:
+                        print(f"🔄 [EXECUTION] Plan updated with {len(updated_steps)} new suggested steps: {updated_steps}")
 
             except Exception as e:
                 print(f"❌ [EXECUTION] Step '{step.name}' failed: {e}")
@@ -441,7 +370,13 @@ class SierraAgent:
 
         if step.tool_name in tool_mapping:
             # Use the original user input for tool execution
-            original_input = step.parameters.get("user_input") or context.get("original_request", "")
+            original_input = (
+                step.parameters.get("user_input") or 
+                context.get("execution", {}).get("original_request", "") or
+                context.get("original_request", "")
+            )
+            if not original_input:
+                print(f"⚠️ [STEP] No user input found for {step.tool_name}, available context keys: {list(context.keys())}")
             return self.tool_orchestrator.execute_tool(step.tool_name, original_input)
         return ToolResult(
             success=False,
@@ -547,21 +482,16 @@ class SierraAgent:
         if not primary_tool_result and successful_tool_results:
             primary_tool_result = successful_tool_results[-1]
 
-        # Convert IntentType enum to string format expected by LLM client
-        intent_mapping = {
-            IntentType.ORDER_STATUS: "order_status",
-            IntentType.PRODUCT_INQUIRY: "product_inquiry",
-            IntentType.EARLY_RISERS_PROMOTION: "promotion_inquiry",
-            IntentType.RETURN_REQUEST: "return_request",
-            IntentType.COMPLAINT: "complaint",
-            IntentType.SHIPPING_INFO: "shipping_info",
-            IntentType.PROMOTION_INQUIRY: "promotion_inquiry",
-            IntentType.GENERAL_INQUIRY: "customer_service",
-            IntentType.CUSTOMER_SERVICE: "customer_service"
-        }
-
-        plan_intent = getattr(plan, "intent", IntentType.CUSTOMER_SERVICE)
-        intent_string = intent_mapping.get(plan_intent, "customer_service")
+        # Get request type from conversation context (replacing intent system)
+        request_type = plan.conversation_context.get("request_type", "general")
+        
+        # Map request types to LLM client format
+        intent_string = {
+            "order_status": "order_status",
+            "product_inquiry": "product_inquiry", 
+            "promotion": "promotion_inquiry",
+            "general": "customer_service"
+        }.get(request_type, "customer_service")
 
         # NEW: Build conversational context using the Conversation class
         conversational_context = self.conversation.build_conversational_context(
@@ -585,27 +515,6 @@ class SierraAgent:
         response = self.tool_orchestrator.llm_client.generate_response(context)
         return response
 
-    def _create_fallback_plan(self, user_input: str) -> MultiTurnPlan:
-        """Create a simple fallback plan when plan generation fails."""
-        import uuid
-        from datetime import datetime
-
-        fallback_step = PlanStep(
-            step_id=f"step_{uuid.uuid4().hex[:8]}",
-            name="General Assistance",
-            description="Provide general customer service help",
-            tool_name="handle_general_inquiry",
-            parameters={"user_input": user_input}
-        )
-
-        return MultiTurnPlan(
-            plan_id=f"fallback_{uuid.uuid4().hex[:8]}",
-            intent=IntentType.GENERAL_INQUIRY,
-            customer_request=user_input,
-            steps=[fallback_step],
-            status=PlanStatus.PENDING,
-            created_at=datetime.now()
-        )
 
     def _extract_order_info(self, user_input: str) -> Dict[str, Any]:
         """Extract order information from user input."""
