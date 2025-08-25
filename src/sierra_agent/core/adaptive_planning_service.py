@@ -103,8 +103,15 @@ Return only: "RELATED" or "NOT_RELATED" """
         actions = self._determine_next_action_with_llm(plan, user_input, tool_orchestrator)
         
         if not actions:
-            # No clear action determined
-            return plan, "I'm not sure how to help with that. Could you please be more specific about what you need?"
+            # No clear action determined - try LLM analysis with full context and tool registry
+            fallback_actions = self._retry_planning_with_full_context(plan, user_input, tool_orchestrator)
+            if fallback_actions:
+                if len(fallback_actions) == 1:
+                    return self._execute_single_action(plan, fallback_actions[0], user_input, tool_orchestrator)
+                else:
+                    return self._execute_multistep_actions(plan, fallback_actions, user_input, tool_orchestrator)
+            else:
+                return plan, "I'm not sure how to help with that. Could you please be more specific about what you need?"
         
         # Handle single action case (including special responses)
         if len(actions) == 1:
@@ -364,17 +371,10 @@ Response: Just the customer service message"""
             return [action] if action else []
     
     def _enhance_parameters_with_llm(self, plan: EvolvingPlan, action: str, user_input: str) -> Optional[Dict[str, Any]]:
-        """Use LLM to enhance parameters for specific actions like recommendations."""
-        if action == "get_recommendations" and self.llm_service:
-            try:
-                # Use LLM to generate smart search terms based on order/product context
-                order_context = {}
-                if plan.context.current_order:
-                    order_context["current_order"] = plan.context.current_order
-                
-                product_context = plan.context.found_products if plan.context.found_products else []
-                
-                # Smart parameter selection for new recommendations tool
+        """Use LLM to enhance parameters for specific actions using available context."""
+        try:
+            if action == "get_recommendations" and self.llm_service:
+                # Smart parameter selection for recommendations tool
                 params = {"limit": 3}
                 
                 # If we have order information, use complementary strategy
@@ -389,13 +389,112 @@ Response: Just the customer service message"""
                 
                 # Default to general recommendations
                 return {"recommendation_type": "general", "limit": 3}
+            
+            elif action == "get_product_info":
+                # If user is asking about products they ordered, use the SKUs from order
+                if plan.context.current_order:
+                    order = plan.context.current_order
+                    if hasattr(order, 'products_ordered') and order.products_ordered:
+                        # Pick the first SKU for lookup
+                        return {
+                            "product_identifier": order.products_ordered[0],
+                            "include_recommendations": True
+                        }
                 
-            except Exception as e:
-                logger.exception(f"Error enhancing parameters with LLM: {e}")
-                return None
+                # If we have found products, use those
+                if plan.context.found_products:
+                    first_product = plan.context.found_products[0]
+                    if hasattr(first_product, 'sku'):
+                        return {
+                            "product_identifier": first_product.sku,
+                            "include_recommendations": True
+                        }
+                
+            # For other tools, return None to use default parameter extraction
+            return None
+                
+        except Exception as e:
+            logger.exception(f"Error enhancing parameters with context: {e}")
+            return None
+    
+    def _retry_planning_with_full_context(self, plan: EvolvingPlan, user_input: str, tool_orchestrator: ToolOrchestrator) -> List[str]:
+        """Let LLM analyze full conversation context and choose appropriate tools."""
+        if not self.llm_service:
+            return []
         
-        # Return None for other actions - plan will use default parameter extraction
-        return None
+        try:
+            # Get available tools from registry
+            available_tools = tool_orchestrator.get_available_tools()
+            tool_descriptions = tool_orchestrator.get_tools_for_llm_planning()
+            
+            # Build rich context description
+            context_info = []
+            
+            if plan.context.current_order:
+                order = plan.context.current_order
+                context_info.append(f"Current Order: {getattr(order, 'order_number', 'N/A')} for {getattr(order, 'customer_name', 'N/A')}")
+                if hasattr(order, 'products_ordered') and order.products_ordered:
+                    context_info.append(f"Ordered Products (SKUs): {', '.join(order.products_ordered)}")
+            
+            if plan.context.found_products:
+                products = plan.context.found_products[:3]
+                product_names = [getattr(p, 'product_name', 'Unknown') for p in products]
+                context_info.append(f"Previously Found Products: {', '.join(product_names)}")
+            
+            if plan.executed_steps:
+                executed = [step.tool_name for step in plan.executed_steps]
+                context_info.append(f"Already Executed: {', '.join(executed)}")
+            
+            context_summary = "\n".join(context_info) if context_info else "No previous context"
+            
+            # Create a focused prompt for the LLM
+            prompt = f"""You are helping a customer service agent choose the right tool(s) for a customer request.
+
+CUSTOMER REQUEST: "{user_input}"
+
+CONVERSATION CONTEXT:
+{context_summary}
+
+AVAILABLE TOOLS:
+{tool_descriptions}
+
+Based on the customer's request and the conversation context above, which tool(s) should be used?
+
+INSTRUCTIONS:
+- Consider what the customer is asking for and what context is already available
+- If asking about "products I ordered" and we have order context with SKUs, use get_product_info
+- If asking for recommendations and we have order/product context, use get_recommendations
+- If asking to browse/search without specific context, use browse_catalog
+- Return ONLY the tool name(s), comma-separated if multiple needed
+- If no tool is appropriate, return "conversational_response"
+
+RESPONSE (tool names only):"""
+
+            # Use thinking model for better analysis
+            response = self.llm_service.thinking_client.call_llm(prompt, temperature=0.1)
+            
+            # Parse response
+            response = response.strip().lower()
+            if 'conversational_response' in response:
+                return []
+            
+            # Extract tool names
+            suggested_tools = []
+            if ',' in response:
+                tools = [t.strip() for t in response.split(',')]
+            else:
+                tools = [response.strip()]
+            
+            # Validate tools exist
+            for tool in tools:
+                if tool in available_tools:
+                    suggested_tools.append(tool)
+            
+            return suggested_tools[:2]  # Max 2 tools
+            
+        except Exception as e:
+            logger.exception(f"Error in context-aware retry planning: {e}")
+            return []
     
     def _execute_single_action(self, plan: EvolvingPlan, action: str, user_input: str, tool_orchestrator: ToolOrchestrator) -> Tuple[EvolvingPlan, str]:
         """Execute a single action and return response."""
