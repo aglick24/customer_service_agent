@@ -38,7 +38,7 @@ class BusinessTools:
             print("❌ [ORDER_STATUS] No email found in user input")
             return ToolResult(
                 success=False,
-                error="Please provide your email address to check order status.",
+                error="I need your email address to look up your order. Please provide it and try again.",
                 data=None
             )
 
@@ -46,7 +46,7 @@ class BusinessTools:
             print("❌ [ORDER_STATUS] No order number found in user input")
             return ToolResult(
                 success=False,
-                error="Please provide your order number to check order status.",
+                error="I need your order number to check the status. Please provide it in the format W001 or #W001.",
                 data=None
             )
 
@@ -59,7 +59,7 @@ class BusinessTools:
             print(f"❌ [ORDER_STATUS] Order {order_number} not found for {email}")
             return ToolResult(
                 success=False,
-                error=f"Order {order_number} not found for email {email}. Please check your information.",
+                error=f"I couldn't find order {order_number} for {email}. Please double-check your order number and email address, or contact our support team if you need help.",
                 data=None
             )
 
@@ -89,7 +89,7 @@ class BusinessTools:
         if not matching_products:
             return ToolResult(
                 success=False,
-                error=f"No products found for '{query}'. Please try a different search term.",
+                error=f"I couldn't find any products matching '{query}'. Try using different keywords like 'hiking', 'camping', or 'boots'.",
                 data=None
             )
 
@@ -239,24 +239,6 @@ class BusinessTools:
 
 
     # Helper methods
-    def _extract_order_id(self, text: str) -> Optional[str]:
-        """Extract order ID from text."""
-        print(
-            f"🔍 [HELPER] Extracting order ID from: '{text[:30]}{'...' if len(text) > 30 else ''}'"
-        )
-
-        # Look for patterns like ORD12345, Order 12345, #12345
-        patterns = [r"ORD\d+", r"Order\s+(\d+)", r"#(\d+)", r"Track\s+#(\d+)"]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                order_id = match.group(1) if len(match.groups()) > 0 else match.group(0)
-                print(f"🔍 [HELPER] Extracted order ID: {order_id}")
-                return order_id
-
-        print("🔍 [HELPER] No order ID found")
-        return None
 
     def _extract_product_id(self, text: str) -> Optional[str]:
         """Extract product ID from text."""
@@ -279,31 +261,6 @@ class BusinessTools:
         print("🔍 [HELPER] No product ID found")
         return None
 
-    def _extract_product_name(self, text: str) -> Optional[str]:
-        """Extract product name/category from text."""
-        print(
-            f"🔍 [HELPER] Extracting product name from: '{text[:30]}{'...' if len(text) > 30 else ''}'"
-        )
-
-        # Look for common product categories
-        categories = [
-            "hiking",
-            "camping",
-            "water",
-            "climbing",
-            "boots",
-            "tent",
-            "backpack",
-        ]
-
-        text_lower = text.lower()
-        for category in categories:
-            if category in text_lower:
-                print(f"🔍 [HELPER] Extracted product category: {category}")
-                return category
-
-        print("🔍 [HELPER] No product category found")
-        return None
 
 
     def _extract_email(self, text: str) -> Optional[str]:
@@ -325,23 +282,33 @@ class BusinessTools:
         return None
 
     def _extract_order_number(self, text: str) -> Optional[str]:
-        """Extract order number from text."""
+        """Extract order number from text with improved pattern matching."""
         print(
             f"🔍 [HELPER] Extracting order number from: '{text[:30]}{'...' if len(text) > 30 else ''}'"
         )
 
-        # Look for patterns like #W001, W001, Order #W001
-        patterns = [r"#W\d+", r"W\d+", r"Order\s+#?W\d+"]
+        # Comprehensive patterns for order numbers including flexible formatting
+        patterns = [
+            r"#\s*W\s*\d+",           # #W001, # W001, #W 001
+            r"\bW\s*-?\s*\d+\b",      # W001, W-001, W 001 (with word boundaries)
+            r"order\s+#?\s*W\s*-?\s*\d+",  # Order W001, order #W001, order W-001
+            r"order\s+number\s+#?\s*W\s*-?\s*\d+",  # order number W001
+            r"my\s+order\s+#?\s*W\s*-?\s*\d+",      # my order W001
+        ]
 
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                order_number = match.group(0)
-                # Ensure it starts with # if it's a W number
-                if order_number.startswith("W") and not order_number.startswith("#"):
-                    order_number = "#" + order_number
-                print(f"🔍 [HELPER] Extracted order number: {order_number}")
-                return order_number
+                # Extract just the core order number part
+                order_text = match.group(0)
+                
+                # Find the W and number part
+                w_match = re.search(r"W\s*-?\s*(\d+)", order_text, re.IGNORECASE)
+                if w_match:
+                    number_part = w_match.group(1)
+                    order_number = f"#W{number_part.zfill(3)}"  # Ensure consistent format like #W001
+                    print(f"🔍 [HELPER] Extracted order number: {order_number}")
+                    return order_number
 
         print("🔍 [HELPER] No order number found")
         return None
@@ -426,26 +393,3 @@ class BusinessTools:
 
         return preferences
 
-    def _extract_search_query(self, text: str) -> Optional[str]:
-        """Extract search query from text."""
-        # Remove common phrases and keep the main search term
-        text_lower = text.lower()
-
-        # Remove common phrases
-        phrases_to_remove = [
-            "i'm looking for", "i need", "i want", "show me", "find", "search for",
-            "can you help me find", "looking for", "searching for", "to", "for"
-        ]
-
-        search_query = text_lower
-        for phrase in phrases_to_remove:
-            search_query = search_query.replace(phrase, "").strip()
-
-        # Clean up extra spaces and common words
-        search_query = " ".join([word for word in search_query.split() if len(word) > 2])
-
-        # If we have a meaningful query left, return it
-        if len(search_query) > 2:
-            return search_query
-
-        return None

@@ -1,5 +1,5 @@
 """AI and LLM integration modules."""
 
-from .llm_client import LLMClient, UsageStats
+from .llm_client import LLMClient
 
-__all__ = ["LLMClient", "UsageStats"]
+__all__ = ["LLMClient"]

@@ -72,6 +72,18 @@ class Order:
             if product:
                 products.append(product)
         return products
+    
+    def get_products_summary(self, data_provider) -> str:
+        """Get a formatted summary of products in this order."""
+        products = self.get_products(data_provider)
+        if not products:
+            return "Product details not available"
+        
+        summaries = []
+        for product in products:
+            summaries.append(f"    - {product.product_name} ({product.sku})")
+        
+        return "\n".join(summaries)
 
     def get_tracking_url(self) -> Optional[str]:
         """Generate tracking URL if tracking number exists."""
@@ -265,7 +277,11 @@ class ToolResult:
             # Handle specific business object types with rich formatting
             if isinstance(self.data, Order):
                 return self._format_order_for_context(self.data)
-            if isinstance(self.data, list) and len(self.data) > 0:
+            if isinstance(self.data, list):
+                # Handle empty lists appropriately
+                if len(self.data) == 0:
+                    return "No results found"
+                # Handle non-empty lists
                 # Check if it's a list of Products
                 if all(isinstance(item, Product) for item in self.data):
                     return self._format_products_for_context(self.data)
@@ -285,28 +301,43 @@ class ToolResult:
             return f"Serialization error: {str(e)[:100]}... (Data type: {type(self.data).__name__})"
 
     def _format_order_for_context(self, order: "Order") -> str:
-        """Format Order object for LLM context."""
-        # Note: We'll need to pass data_provider for methods like get_products()
-        # For now, format core order data
+        """Format Order object for LLM context with enriched product details."""
+        # Build detailed product information for ordered items
+        product_details = []
+        for sku in order.products_ordered:
+            # For now, format with SKU - this could be enhanced with full product lookup
+            product_details.append(f"    - {sku}")
+        
+        products_formatted = "\n".join(product_details) if product_details else "    - No products listed"
+        
         return f"""Order Details:
   Order Number: {order.order_number}
   Customer: {order.customer_name}
   Status: {order.status}
-  Products Ordered: {', '.join(order.products_ordered)}
+  Products Ordered:
+{products_formatted}
   Tracking: {order.tracking_number or 'Not available'}
   Tracking URL: {order.get_tracking_url() or 'Not available'}"""
 
     def _format_products_for_context(self, products: List["Product"]) -> str:
-        """Format Product list for LLM context."""
+        """Format Product list for LLM context with better user feedback."""
         if not products:
             return "No products found"
 
+        # Show more products but with smart truncation
+        display_limit = 5
         formatted_products = []
-        for product in products[:3]:  # Limit to 3 products to avoid context overflow
+        
+        for product in products[:display_limit]:
             formatted_products.append(f"- {product.product_name} ({product.sku}): {product.description}")
 
-        suffix = f" (and {len(products) - 3} more)" if len(products) > 3 else ""
-        return "Products Found:\n" + "\n".join(formatted_products) + suffix
+        result = "Products Found:\n" + "\n".join(formatted_products)
+        
+        if len(products) > display_limit:
+            remaining = len(products) - display_limit
+            result += f"\n\n(Showing {display_limit} of {len(products)} products. {remaining} additional products available - ask me to show more or refine your search for better results.)"
+        
+        return result
 
     def _format_product_for_context(self, product: "Product") -> str:
         """Format single Product for LLM context."""

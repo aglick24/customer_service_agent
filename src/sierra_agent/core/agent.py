@@ -274,42 +274,40 @@ class SierraAgent:
         request_type = context.get("request_type", "general")
 
         if request_type == "order_status":
-            steps.extend([
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Extract Order Information",
-                    description="Extract email and order number from user input",
-                    tool_name="extract_order_info",
-                    parameters={"user_input": user_input}
-                ),
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Get Order Status",
-                    description="Retrieve order status and tracking information",
-                    tool_name="get_order_status",
-                    parameters={},
-                    dependencies=["Extract Order Information"]
-                )
-            ])
+            extract_step = PlanStep(
+                step_id=f"step_{uuid.uuid4().hex[:8]}",
+                name="Extract Order Information",
+                description="Extract email and order number from user input",
+                tool_name="extract_order_info",
+                parameters={"user_input": user_input}
+            )
+            order_step = PlanStep(
+                step_id=f"step_{uuid.uuid4().hex[:8]}",
+                name="Get Order Status",
+                description="Retrieve order status and tracking information",
+                tool_name="get_order_status",
+                parameters={},
+                dependencies=[extract_step.step_id]
+            )
+            steps.extend([extract_step, order_step])
 
         elif request_type == "product_inquiry":
-            steps.extend([
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Understand Product Needs",
-                    description="Analyze what the customer is looking for",
-                    tool_name="analyze_product_request",
-                    parameters={"user_input": user_input}
-                ),
-                PlanStep(
-                    step_id=f"step_{uuid.uuid4().hex[:8]}",
-                    name="Search Products",
-                    description="Search and recommend relevant products",
-                    tool_name="search_products",
-                    parameters={},
-                    dependencies=["Understand Product Needs"]
-                )
-            ])
+            analyze_step = PlanStep(
+                step_id=f"step_{uuid.uuid4().hex[:8]}",
+                name="Understand Product Needs",
+                description="Analyze what the customer is looking for",
+                tool_name="analyze_product_request",
+                parameters={"user_input": user_input}
+            )
+            search_step = PlanStep(
+                step_id=f"step_{uuid.uuid4().hex[:8]}",
+                name="Search Products",
+                description="Search and recommend relevant products",
+                tool_name="search_products",
+                parameters={},
+                dependencies=[analyze_step.step_id]
+            )
+            steps.extend([analyze_step, search_step])
 
         elif request_type == "promotion":
             steps.append(
@@ -344,6 +342,10 @@ class SierraAgent:
         plan.status = PlanStatus.IN_PROGRESS
         execution_results: Dict[str, Any] = {"steps": [], "overall_success": True}
 
+        # NEW: Progressive context accumulation during execution
+        execution_context = plan.conversation_context.copy()
+        print(f"🧠 [EXECUTION] Starting with base context: {list(execution_context.keys())}")
+
         # NEW: Execute steps in dependency order
         execution_order = self._resolve_step_dependencies(plan.steps)
         print(f"🔗 [EXECUTION] Dependency-resolved execution order: {[step.name for step in execution_order]}")
@@ -355,10 +357,27 @@ class SierraAgent:
                 # Gather data from dependency steps
                 dependency_data = self._gather_dependency_data(step, execution_results["steps"])
 
-                # Execute the step with dependency data
-                result = self._execute_plan_step(step, plan.conversation_context, dependency_data)
+                # Execute the step with accumulated context and dependency data
+                result = self._execute_plan_step(step, execution_context, dependency_data)
                 step.result = result
                 step.is_completed = True
+
+                # NEW: Accumulate context with step results for future steps
+                if isinstance(result, ToolResult):
+                    step_context_key = f"step_{step.step_id}_result"
+                    execution_context[step_context_key] = result  # Store the full ToolResult
+                    
+                    # Add semantic keys based on result type for easier access (only for successful results)
+                    if result.success and hasattr(result.data, '__class__'):
+                        data_type = result.data.__class__.__name__
+                        if data_type == "Order":
+                            execution_context["current_order"] = result.data
+                        elif data_type == "list" and len(result.data) > 0:
+                            if hasattr(result.data[0], '__class__') and result.data[0].__class__.__name__ == "Product":
+                                execution_context["found_products"] = result.data
+                    
+                    status_msg = "(success)" if result.success else "(failed)"
+                    print(f"🧠 [EXECUTION] Updated context with {step_context_key} {status_msg}, total keys: {len(execution_context)}")
 
                 execution_results["steps"].append({
                     "step_id": step.step_id,
@@ -374,6 +393,14 @@ class SierraAgent:
                 step.result = {"error": str(e)}
                 execution_results["overall_success"] = False
 
+                # Store failed step result in context for debugging
+                if isinstance(step.result, dict) and "error" in step.result:
+                    step_context_key = f"step_{step.step_id}_result"
+                    execution_context[step_context_key] = step.result
+                    print(f"🧠 [EXECUTION] Updated context with failed step {step_context_key}, total keys: {len(execution_context)}")
+                else:
+                    print(f"🧠 [EXECUTION] Not updating context due to step execution failure")
+
                 execution_results["steps"].append({
                     "step_id": step.step_id,
                     "name": step.name,
@@ -381,10 +408,12 @@ class SierraAgent:
                     "error": str(e)
                 })
 
-        # Update plan status
+        # Update plan status and store final context
         plan.status = PlanStatus.COMPLETED if execution_results["overall_success"] else PlanStatus.FAILED
+        plan.conversation_context = execution_context  # Store accumulated context back to plan
 
         print(f"🏁 [EXECUTION] Plan execution completed. Status: {plan.status}")
+        print(f"🧠 [EXECUTION] Final context keys: {list(execution_context.keys())}")
         return execution_results
 
     def _execute_plan_step(self, step: PlanStep, context: Dict[str, Any], dependency_data: Optional[Dict[str, Any]] = None) -> ToolResult:
@@ -473,14 +502,14 @@ class SierraAgent:
 
         dependency_data = {}
 
-        for dep_name in step.dependencies:
-            # Find the completed step with this name
+        for dep_step_id in step.dependencies:
+            # Find the completed step with this step_id
             for completed_step in completed_steps:
-                if completed_step["name"] == dep_name and completed_step["success"]:
+                if completed_step["step_id"] == dep_step_id and completed_step["success"]:
                     step_result = completed_step["result"]
                     if isinstance(step_result, ToolResult) and step_result.success:
-                        dependency_data[dep_name] = step_result.data
-                        print(f"📊 [DEPENDENCIES] Found data for dependency '{dep_name}'")
+                        dependency_data[dep_step_id] = step_result.data
+                        print(f"📊 [DEPENDENCIES] Found data for dependency step '{dep_step_id}'")
                     break
 
         print(f"📊 [DEPENDENCIES] Gathered {len(dependency_data)} dependency data items")
@@ -594,6 +623,15 @@ class SierraAgent:
         """Analyze what products the customer is looking for."""
         preferences = self.tool_orchestrator.business_tools._extract_preferences(user_input)
         category = self.tool_orchestrator.business_tools._extract_product_category(user_input)
+        
+        # Handle generic product requests
+        user_lower = user_input.lower()
+        if (category is None and len(preferences) == 0 and 
+            any(word in user_lower for word in ["products", "gear", "items", "equipment", "show me"])):
+            # For generic requests, use "outdoor" as default category to get some results
+            category = "outdoor gear"
+            preferences = ["outdoor", "adventure"]
+            print(f"🔍 [ANALYSIS] Generic product request detected, using fallback category: {category}")
 
         return {
             "preferences": preferences,

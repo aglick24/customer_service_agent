@@ -218,18 +218,19 @@ class Conversation:
 
         context_parts = []
 
-        # Get recent messages with tool results (limit to 1 previous message to avoid context overflow)
-        recent_messages = self.get_recent_messages_with_tool_results(limit=1)
+        # Get recent messages with tool results (limit to 3 previous messages for better context)
+        recent_messages = self.get_recent_messages_with_tool_results(limit=3)
 
         if recent_messages:
-            context_parts.append("PREVIOUS INTERACTION:")
-            for message in recent_messages:
+            context_parts.append("PREVIOUS INTERACTIONS:")
+            for i, message in enumerate(recent_messages, 1):
                 # Format the tool results from the previous message
                 if message.tool_results:
+                    context_parts.append(f"Interaction {i}:")
                     for tool_result in message.tool_results:
                         formatted_result = tool_result.serialize_for_context()
-                        context_parts.append(f"Previously retrieved:\n{formatted_result}")
-            context_parts.append("")  # Add separator
+                        context_parts.append(f"  {formatted_result}")
+                    context_parts.append("")  # Add separator between interactions
 
         # Add current tool results
         if current_tool_results:

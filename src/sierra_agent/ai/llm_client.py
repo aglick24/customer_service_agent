@@ -7,7 +7,6 @@ classification, sentiment analysis, and response generation with usage tracking.
 
 import logging
 import os
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -25,26 +24,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class UsageStats:
-    """Track API usage and costs."""
-
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_cost: float = 0.0
-    api_calls: int = 0
-
-    def update_from_response(self, response: Dict[str, Any]) -> None:
-        """Update stats from API response."""
-        usage = response.get("usage", {})
-        self.prompt_tokens += usage.get("prompt_tokens", 0)
-        self.completion_tokens += usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-        self.api_calls += 1
-
-        # Estimate cost (approximate rates for GPT-4)
-        cost_per_1k_tokens = 0.03  # $0.03 per 1K tokens (approximate)
-        self.total_cost += (total_tokens / 1000) * cost_per_1k_tokens
 
 
 class LLMClient:
@@ -129,46 +108,6 @@ class LLMClient:
             print(f"❌ [LLM_CLIENT] OpenAI API error: {e}")
             raise
 
-    def _generate_response_mock(self, context: Dict[str, Any]) -> str:
-        """Mock response generation for testing."""
-        print("🎭 [LLM_CLIENT] Performing mock response generation...")
-
-        user_input = context.get("user_input", "")
-        intent = context.get("intent", "customer_service")
-        sentiment = context.get("sentiment", "neutral")
-
-        print(
-            f"🎭 [LLM_CLIENT] Mock context - Intent: {intent}, Sentiment: {sentiment}"
-        )
-
-        # Generate appropriate mock response based on intent
-        if intent == "order_status":
-            response = "I'd be happy to help you with your order. Could you please provide your order number?"
-        elif intent == "product_inquiry":
-            response = "I'd be happy to help you find the perfect outdoor gear. What are you looking for?"
-        elif intent == "return_request":
-            response = "I understand you'd like to make a return. Let me help you with that process."
-        elif intent == "complaint":
-            response = "I'm sorry to hear you're experiencing an issue. Let me help resolve this for you."
-        elif intent == "shipping_info":
-            response = (
-                "I can help you with shipping information. What would you like to know?"
-            )
-        elif intent == "promotion_inquiry":
-            response = "Great question about our promotions! Let me check what's currently available."
-        else:
-            response = "Thank you for contacting Sierra Outfitters. How can I assist you today?"
-
-        # Adjust response based on sentiment
-        if sentiment == "positive":
-            response = "I'm glad to help! " + response
-        elif sentiment == "negative":
-            response = "I understand your concern. " + response
-
-        print(
-            f"🎭 [LLM_CLIENT] Mock response generated: '{response[:50]}{'...' if len(response) > 50 else ''}'"
-        )
-        return response
 
     def _build_response_prompt(self, context: Dict[str, Any]) -> str:
         """Build a prompt for response generation from ToolResult context."""

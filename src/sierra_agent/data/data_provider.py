@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import random
+import re
 import string
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -87,7 +88,7 @@ class DataProvider:
 
         for order_data in self.customer_orders:
             if (order_data["Email"].lower() == email.lower() and
-                order_data["OrderNumber"] == order_number):
+                order_data["OrderNumber"].lower() == order_number.lower()):
 
                 order = Order(
                     customer_name=order_data["CustomerName"],
@@ -131,21 +132,40 @@ class DataProvider:
         print(f"🔍 [DATA_PROVIDER] Searching products: '{query}' category: {category}")
 
         query_lower = query.lower()
-        results = []
+        query_words = query_lower.split()
+        scored_results = []
 
         for product_data in self.product_catalog:
             # Skip if category filter doesn't match
             if category and category.lower() not in [tag.lower() for tag in product_data.get("Tags", [])]:
                 continue
 
-            # Search in name, description, and tags
-            searchable_text = (
-                product_data.get("ProductName", "") + " " +
-                product_data.get("Description", "") + " " +
-                " ".join(product_data.get("Tags", []))
-            ).lower()
+            # Search in name, description, and tags with scoring
+            product_name = product_data.get("ProductName", "").lower()
+            description = product_data.get("Description", "").lower()
+            tags = " ".join(product_data.get("Tags", [])).lower()
 
-            if query_lower in searchable_text:
+            score = 0
+            matches_found = 0
+            
+            for word in query_words:
+                word_pattern = r'\b' + re.escape(word) + r'\b'
+                
+                # Higher score for name matches (most relevant)
+                if re.search(word_pattern, product_name):
+                    score += 10
+                    matches_found += 1
+                # Medium score for tag matches
+                elif re.search(word_pattern, tags):
+                    score += 5
+                    matches_found += 1
+                # Lower score for description matches
+                elif re.search(word_pattern, description):
+                    score += 2
+                    matches_found += 1
+            
+            # Only include if at least one word matches
+            if matches_found > 0:
                 product = Product(
                     product_name=product_data["ProductName"],
                     sku=product_data["SKU"],
@@ -153,7 +173,11 @@ class DataProvider:
                     description=product_data["Description"],
                     tags=product_data.get("Tags", [])
                 )
-                results.append(product)
+                scored_results.append((score, product))
+
+        # Sort by score (descending) and extract products
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        results = [product for score, product in scored_results]
 
         print(f"✅ [DATA_PROVIDER] Found {len(results)} matching products")
         return results
