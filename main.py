@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 def print_banner():
     """Display the Sierra Outfitters welcome banner."""
     print("🏔️" * 50)
-    print("🏔️  SIERRA OUTFITTERS PLANNING AGENT  🏔️")
+    print("🏔️  SIERRA OUTFITTERS ADVENTURE AGENT  🏔️")
     print("🏔️" * 50)
-    print("Your AI-powered outdoor gear customer service companion!")
-    print("Now with intelligent planning and strategic execution!")
+    print("Your AI-powered outdoor gear companion - Adventure awaits! 🏔️")
+    print("Ready to help you gear up for your next expedition!")
     print("Type 'help' for available commands, 'quit' to exit.")
     print("=" * 50)
 
@@ -44,15 +44,15 @@ def print_help():
     print("  reset    - Reset current conversation")
     print("  planning - Show planning system status")
     print("  quit     - Exit the application")
-    print("\n💬 Just type naturally to chat with the AI agent!")
+    print("\n🏔️ Just type naturally to chat with your adventure agent!")
     print("   Examples:")
     print("   - 'I need help finding hiking boots'")
-    print("   - 'Track my order #12345'")
-    print("   - 'What's on sale today?'")
+    print("   - 'Track my order #W001'")
+    print("   - 'What Early Risers deals are available?'")
     print("   - 'Tell me about your return policy'")
     print("\n🧠 Planning Mode:")
-    print("   - Complex requests automatically use planning")
-    print("   - Simple requests use fast reactive mode")
+    print("   - Complex requests automatically use smart planning")
+    print("   - Simple requests use quick response mode")
     print("   - Type 'planning' to see current strategy")
 
 
@@ -115,18 +115,18 @@ def main():
     
     # Initialize the AI agent
     try:
-        print("\n🔧 Initializing Planning-Based AI Agent...")
+        print("\n🔧 Initializing Adventure AI Agent...")
         agent = SierraAgent()
-        print("✅ Planning-Based AI Agent initialized successfully!")
+        print("✅ Adventure AI Agent initialized successfully! 🏔️")
     except Exception as e:
-        print(f"❌ Failed to initialize Planning-Based AI Agent: {e}")
+        print(f"❌ Failed to initialize Adventure AI Agent: {e}")
         logger.error(f"Agent initialization failed: {e}")
         sys.exit(1)
     
     # Start conversation
-    print("\n🚀 Starting new planning conversation session...")
+    print("\n🚀 Starting your adventure conversation session...")
     session_id = agent.start_conversation()
-    print(f"✅ Session started: {session_id}")
+    print(f"✅ Session started: {session_id} - Onward into the unknown! 🏔️")
     
     # Main conversation loop
     while True:
@@ -164,12 +164,12 @@ def main():
                 continue
             
             # Process user input through the AI agent
-            print("\n🤖 Sierra Planning Agent: ", end="", flush=True)
+            print("\n🏔️ Sierra Adventure Agent: ", end="", flush=True)
             response = agent.process_user_input(user_input)
             print(response)
             
         except KeyboardInterrupt:
-            print("\n\n👋 Goodbye! Thanks for using Sierra Outfitters Planning Agent!")
+            print("\n\n👋 Goodbye! Thanks for using Sierra Outfitters Adventure Agent! Happy trails! 🏔️")
             break
         except Exception as e:
             print(f"\n❌ An error occurred: {e}")

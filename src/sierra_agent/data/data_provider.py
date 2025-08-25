@@ -3,7 +3,7 @@ Data Provider Module
 
 Clean, focused data provider for Sierra Outfitters core business operations:
 - Order tracking and status
-- Product catalog and recommendations  
+- Product catalog and recommendations
 - Early risers promotion
 """
 
@@ -25,7 +25,7 @@ class DataProvider:
 
     def __init__(self, data_dir: str = "data") -> None:
         """Initialize the data provider with data directory."""
-        
+
         self.data_dir = data_dir
         self.customer_orders: List[Dict[str, Any]] = []
         self.product_catalog: List[Dict[str, Any]] = []
@@ -44,13 +44,13 @@ class DataProvider:
             if os.path.exists(orders_file):
                 with open(orders_file) as f:
                     self.customer_orders = json.load(f)
-                
+
             else:
-                
+
                 self.customer_orders = []
         except Exception as e:
-            
-            logger.error(f"Error loading customer orders: {e}")
+
+            logger.exception(f"Error loading customer orders: {e}")
             self.customer_orders = []
 
     def _load_product_catalog(self) -> None:
@@ -61,32 +61,32 @@ class DataProvider:
             if os.path.exists(catalog_file):
                 with open(catalog_file) as f:
                     self.product_catalog = json.load(f)
-                
+
             else:
-                
+
                 self.product_catalog = []
         except Exception as e:
-            
-            logger.error(f"Error loading product catalog: {e}")
+
+            logger.exception(f"Error loading product catalog: {e}")
             self.product_catalog = []
 
     def get_order_status(self, email: str, order_number: str) -> Optional[Order]:
         """
         Get order status information.
-        
+
         Args:
             email: Customer email address
             order_number: Order number (e.g., #W001)
-            
+
         Returns:
             Order object or None if not found
         """
-        
+
         for order_data in self.customer_orders:
             if (order_data["Email"].lower() == email.lower() and
                 order_data["OrderNumber"].lower() == order_number.lower()):
 
-                order = Order(
+                return Order(
                     customer_name=order_data["CustomerName"],
                     email=order_data["Email"],
                     order_number=order_data["OrderNumber"],
@@ -95,7 +95,6 @@ class DataProvider:
                     tracking_number=order_data.get("TrackingNumber")
                 )
 
-                return order
 
         return None
 
@@ -115,15 +114,15 @@ class DataProvider:
     def search_products(self, query: str, category: Optional[str] = None) -> List[Product]:
         """
         Search products by query and optional category.
-        
+
         Args:
             query: Search query (searches name, description, and tags)
             category: Optional category filter
-            
+
         Returns:
             List of matching Product objects
         """
-        
+
         query_lower = query.lower()
         query_words = query_lower.split()
         scored_results = []
@@ -140,10 +139,10 @@ class DataProvider:
 
             score = 0
             matches_found = 0
-            
+
             for word in query_words:
-                word_pattern = r'\b' + re.escape(word) + r'\b'
-                
+                word_pattern = r"\b" + re.escape(word) + r"\b"
+
                 # Higher score for name matches (most relevant)
                 if re.search(word_pattern, product_name):
                     score += 10
@@ -156,7 +155,7 @@ class DataProvider:
                 elif re.search(word_pattern, description):
                     score += 2
                     matches_found += 1
-            
+
             # Only include if at least one word matches
             if matches_found > 0:
                 product = Product(
@@ -170,13 +169,12 @@ class DataProvider:
 
         # Sort by score (descending) and extract products
         scored_results.sort(key=lambda x: x[0], reverse=True)
-        results = [product for score, product in scored_results]
+        return [product for score, product in scored_results]
 
-        return results
 
     def get_products_by_category(self, category: str) -> List[Product]:
         """Get all products in a specific category."""
-        
+
         results = []
         category_lower = category.lower()
 
@@ -196,38 +194,36 @@ class DataProvider:
     def is_early_risers_time(self) -> bool:
         """
         Check if current time is within Early Risers promotion hours (8:00-10:00 AM PT).
-        
+
         Returns:
             True if current time is within promotion hours
         """
         # Get current time in Pacific timezone
-        pacific_tz = timezone(timedelta(hours=-8))  # PST (adjust for daylight saving as needed)
+        pacific_tz = timezone(timedelta(hours=-7))  # PST (adjust for daylight saving as needed)
         current_time = datetime.now(pacific_tz).time()
 
         # Check if current time is between 8:00 AM and 10:00 AM
         start_time = time(8, 0)  # 8:00 AM
         end_time = time(10, 0)   # 10:00 AM
 
-        is_valid = start_time <= current_time <= end_time
+        return start_time <= current_time <= end_time
 
-        return is_valid
 
     def generate_discount_code(self) -> str:
         """
         Generate a unique discount code for Early Risers promotion.
-        
+
         Returns:
             Unique discount code
         """
         # Generate a random 8-character code
-        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        
-        return code
+        return "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
 
     def get_early_risers_promotion(self) -> Optional[Promotion]:
         """
         Get Early Risers promotion details if currently valid.
-        
+
         Returns:
             Promotion object if valid, None otherwise
         """
@@ -236,7 +232,7 @@ class DataProvider:
 
         discount_code = self.generate_discount_code()
 
-        promotion = Promotion(
+        return Promotion(
             name="Early Risers Promotion",
             discount_percentage=10,
             valid_hours="8:00 AM - 10:00 AM PT",
@@ -244,4 +240,3 @@ class DataProvider:
             description="Get 10% off your purchase during early morning hours!"
         )
 
-        return promotion

@@ -6,30 +6,21 @@ provides a unified interface for tool management with proper dependency injectio
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List
 
-from ..data.data_types import ToolResult
+from sierra_agent.data.data_types import ToolResult
+
 from .business_tools import BusinessTools
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class ToolExecutionResult:
-    """Result of tool execution."""
-
-    tool_name: str
-    success: bool
-    data: Any
-    execution_time: float
-    error_message: Optional[str] = None
 
 class ToolOrchestrator:
     """Orchestrates the execution of business tools with clean separation of concerns."""
 
     def __init__(self) -> None:
         """Initialize ToolOrchestrator - pure tool coordination."""
-        
+
         self.business_tools = BusinessTools()
 
         # Available business tools registry (for plan-based execution)
@@ -50,7 +41,7 @@ class ToolOrchestrator:
 
     def _register_custom_tools(self) -> None:
         """Register built-in custom tools."""
-        
+
         # Add any built-in custom tools here
         # For now, we'll leave this empty as tools are added dynamically
 
@@ -68,13 +59,12 @@ class ToolOrchestrator:
 
             # Execute the tool with typed parameters
             tool_method = self.available_tools[tool_name]
-            
+
             # Call tool with unpacked keyword arguments
-            result = tool_method(**kwargs)
-            return result
+            return tool_method(**kwargs)
 
         except Exception as e:
-            logger.error(f"Error executing tool {tool_name}: {e}")
+            logger.exception(f"Error executing tool {tool_name}: {e}")
             return ToolResult(
                 success=False,
                 error=f"Tool execution failed: {e!s}",
@@ -92,42 +82,13 @@ class ToolOrchestrator:
 
         custom_tools = list(self.custom_tools.keys())
 
-        all_tools = business_tools + custom_tools
-        return all_tools
+        return business_tools + custom_tools
 
-    def add_custom_tool(self, tool_name: str, tool_function: Callable) -> bool:
-        """Add a custom tool to the orchestrator."""
-        
-        try:
-            self.custom_tools[tool_name] = tool_function
-            
-            return True
-
-        except Exception as e:
-            
-            logger.error(f"Error adding custom tool {tool_name}: {e}")
-            return False
-
-    def remove_custom_tool(self, tool_name: str) -> bool:
-        """Remove a custom tool from the orchestrator."""
-        
-        try:
-            if tool_name in self.custom_tools:
-                del self.custom_tools[tool_name]
-                
-                return True
-            
-            return False
-
-        except Exception as e:
-            
-            logger.error(f"Error removing custom tool {tool_name}: {e}")
-            return False
 
     def get_tool_execution_stats(self) -> Dict[str, Any]:
         """Get statistics about tool execution."""
-        
-        stats = {
+
+        return {
             "total_tools": len(self.get_available_tools()),
             "business_tools": len(
                 [
@@ -140,4 +101,3 @@ class ToolOrchestrator:
             "custom_tools": len(self.custom_tools),
         }
 
-        return stats

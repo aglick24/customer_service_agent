@@ -3,7 +3,7 @@ Simple Data Types for Sierra Agent Chat Loop
 
 Basic data types that match the JSON data structure for the three core features:
 1. Order Status and Tracking
-2. Product Recommendations  
+2. Product Recommendations
 3. Early Risers Promotion
 """
 
@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
 
 class PlanStatus(Enum):
     """Status of plan execution."""
@@ -56,17 +57,17 @@ class Order:
             if product:
                 products.append(product)
         return products
-    
+
     def get_products_summary(self, data_provider) -> str:
         """Get a formatted summary of products in this order."""
         products = self.get_products(data_provider)
         if not products:
             return "Product details not available"
-        
+
         summaries = []
         for product in products:
             summaries.append(f"    - {product.product_name} ({product.sku})")
-        
+
         return "\n".join(summaries)
 
     def get_tracking_url(self) -> Optional[str]:
@@ -140,21 +141,20 @@ class MultiTurnPlan:
 
     def print_plan(self) -> None:
         """Print the plan in a readable format."""
-        print(f"\n📋 Plan: {self.plan_id}")
-        # Show conversation context summary instead of intent
-        planning_context = self.conversation_context.get("planning", {})
-        if planning_context:
-            print(f"   Context: {planning_context.get('conversation_phase', 'unknown')} | {planning_context.get('current_topic', 'general')}")
-        print(f"   Status: {self.status.value}")
-        print(f"   Customer Request: {self.customer_request}")
-        print(f"   Steps ({len(self.steps)}):")
-        for i, step in enumerate(self.steps, 1):
-            status = "✅" if step.is_completed else "⏳"
-            print(f"      {i}. {status} {step.name}")
-            print(f"         Tool: {step.tool_name}")
-            print(f"         Description: {step.description}")
-        print()
+        print(f"\n📋 EXECUTION PLAN: {self.plan_id}")
+        print(f"🎯 Request: {self.customer_request}")
+        print(f"📊 Status: {self.status.value}")
+        print(f"🔧 Steps to execute:")
         
+        for i, step in enumerate(self.steps, 1):
+            status_icon = "✅" if step.is_completed else "⏳"
+            print(f"  {i}. {status_icon} {step.name} → {step.tool_name}")
+            if step.parameters:
+                print(f"     📝 Parameters: {step.parameters}")
+            if step.dependencies:
+                print(f"     🔗 Depends on: {step.dependencies}")
+        print()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "plan_id": self.plan_id,
@@ -168,29 +168,6 @@ class MultiTurnPlan:
             "current_turn": self.current_turn,
         }
 
-@dataclass
-class ConversationState:
-    """State of the current conversation."""
-    session_id: str
-    active_plan: Optional[MultiTurnPlan] = None
-    conversation_history: List[Dict[str, str]] = field(default_factory=list)
-    current_turn: int = 1
-    start_time: datetime = field(default_factory=datetime.now)
-    last_activity: datetime = field(default_factory=datetime.now)
-
-    def add_message(self, role: str, content: str):
-        self.conversation_history.append({"role": role, "content": content})
-        self.last_activity = datetime.now()
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "active_plan": self.active_plan.to_dict() if self.active_plan else None,
-            "conversation_history": self.conversation_history,
-            "current_turn": self.current_turn,
-            "start_time": self.start_time.isoformat(),
-            "last_activity": self.last_activity.isoformat(),
-        }
 
 @dataclass
 class Promotion:
@@ -216,7 +193,7 @@ class ToolResult:
     data: Any = None
     success: bool = True
     error: Optional[str] = None
-    
+
     # Clean result container - no continuation cruft
 
     def to_dict(self) -> Dict[str, Any]:
@@ -289,9 +266,9 @@ class ToolResult:
         for sku in order.products_ordered:
             # For now, format with SKU - this could be enhanced with full product lookup
             product_details.append(f"    - {sku}")
-        
+
         products_formatted = "\n".join(product_details) if product_details else "    - No products listed"
-        
+
         return f"""Order Details:
   Order Number: {order.order_number}
   Customer: {order.customer_name}
@@ -309,16 +286,16 @@ class ToolResult:
         # Show more products but with smart truncation
         display_limit = 5
         formatted_products = []
-        
+
         for product in products[:display_limit]:
             formatted_products.append(f"- {product.product_name} ({product.sku}): {product.description}")
 
         result = "Products Found:\n" + "\n".join(formatted_products)
-        
+
         if len(products) > display_limit:
             remaining = len(products) - display_limit
             result += f"\n\n(Showing {display_limit} of {len(products)} products. {remaining} additional products available - ask me to show more or refine your search for better results.)"
-        
+
         return result
 
     def _format_product_for_context(self, product: "Product") -> str:

@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ..data.data_types import ToolResult
+from sierra_agent.data.data_types import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,10 @@ class CustomerContext:
 
     def update_sentiment(self, sentiment: str) -> None: # Changed from SentimentType to str
         """Update customer sentiment history."""
-        
+
         self.sentiment_history.append(sentiment)
         self.last_interaction = datetime.now()
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert customer context to dictionary format."""
         return {
@@ -100,7 +100,7 @@ class Conversation:
     """Manages conversation state and message history."""
 
     def __init__(self) -> None:
-        
+
         self.messages: List[Message] = []
         self.customer_context = CustomerContext()
         self.conversation_state = ConversationState()
@@ -108,12 +108,12 @@ class Conversation:
         self.start_time = datetime.now()
         self.last_activity = datetime.now()
         self.context_storage: Dict[str, Any] = {}  # Add explicit context storage
-            
+
         logger.info("New conversation initialized")
 
     def add_user_message(self, content: str) -> None:
         """Add a user message to the conversation."""
-        
+
         message = Message(
             content=content, message_type=MessageType.USER, timestamp=datetime.now()
         )
@@ -122,10 +122,10 @@ class Conversation:
 
         # Update conversation state based on content
         self._update_conversation_state(content)
-        
+
     def add_ai_message(self, content: str) -> None:
         """Add an AI message to the conversation."""
-        
+
         message = Message(
             content=content, message_type=MessageType.AI, timestamp=datetime.now()
         )
@@ -137,7 +137,7 @@ class Conversation:
 
     def add_ai_message_with_results(self, content: str, tool_results: List[ToolResult], intent: Optional[str] = None, plan_id: Optional[str] = None) -> None:
         """Add an AI message with associated tool results and metadata."""
-        
+
         message = Message(
             content=content,
             message_type=MessageType.AI,
@@ -154,7 +154,7 @@ class Conversation:
 
     def get_previous_tool_results(self, result_type: type, limit: int = 3) -> List[ToolResult]:
         """Get previous tool results of specific type (Order, Product, etc.)."""
-        
+
         found_results = []
         # Look through messages in reverse order (most recent first)
         for message in reversed(self.messages):
@@ -171,7 +171,7 @@ class Conversation:
 
     def get_recent_messages_with_tool_results(self, limit: int = 2) -> List[Message]:
         """Get recent messages that have tool results (for context building)."""
-        
+
         messages_with_results = []
         # Look through messages in reverse order
         for message in reversed(self.messages):
@@ -182,12 +182,12 @@ class Conversation:
 
         # Return in chronological order
         messages_with_results.reverse()
-        
+
         return messages_with_results
 
     def build_conversational_context(self, current_tool_results: List[ToolResult], intent: str) -> str:
         """Build conversational context including current and recent tool results."""
-        
+
         context_parts = []
 
         # Get recent messages with tool results (limit to 3 previous messages for better context)
@@ -211,140 +211,129 @@ class Conversation:
                 formatted_result = tool_result.serialize_for_context()
                 context_parts.append(formatted_result)
 
-        full_context = "\n".join(context_parts)
-        
-        return full_context
+        return "\n".join(context_parts)
+
 
     def add_system_message(self, content: str) -> None:
         """Add a system message to the conversation."""
-        
+
         message = Message(
             content=content, message_type=MessageType.SYSTEM, timestamp=datetime.now()
         )
         self.messages.append(message)
         self.last_activity = datetime.now()
-        
+
     def update_customer_sentiment(self, sentiment: str) -> None: # Changed from SentimentType to str
         """Update customer sentiment."""
-        
+
         self.customer_context.update_sentiment(sentiment)
 
         # Update conversation state based on sentiment
         if sentiment == "negative": # Changed from SentimentType to str
             self.conversation_state.urgency_level = "high"
-            
+
         elif sentiment == "positive": # Changed from SentimentType to str
             self.conversation_state.urgency_level = "normal"
             self.conversation_state.satisfaction_level = 0.8
-            
+
     def update_quality_score(self, score: float) -> None:
         """Update conversation quality score."""
-        
+
         self.quality_score = score
-        
+
     def _update_conversation_state(self, content: str) -> None:
         """Update conversation state based on message content."""
-        
+
         content_lower = content.lower()
 
         # Topic detection
         if any(word in content_lower for word in ["order", "tracking", "shipping"]):
             self.conversation_state.current_topic = "order_management"
-            
+
         elif any(
             word in content_lower
             for word in ["product", "gear", "boots", "tent", "hiking"]
         ):
             self.conversation_state.current_topic = "product_inquiry"
-            
+
         elif any(
             word in content_lower for word in ["return", "refund", "complaint", "issue"]
         ):
             self.conversation_state.current_topic = "customer_service"
-            
+
         # Urgency detection
         if any(
             word in content_lower
             for word in ["urgent", "asap", "emergency", "problem", "broken"]
         ):
             self.conversation_state.urgency_level = "high"
-            
+
     def _update_conversation_phase(self) -> None:
         """Update conversation phase based on message count."""
-        
+
         message_count = len(self.messages)
 
         if message_count <= 2:
             self.conversation_state.conversation_phase = "greeting"
-            
+
         elif message_count <= 6:
             self.conversation_state.conversation_phase = "exploration"
-            
+
         elif message_count <= 10:
             self.conversation_state.conversation_phase = "resolution"
-            
+
         else:
             self.conversation_state.conversation_phase = "closing"
-            
+
     def get_message_history(self, limit: Optional[int] = None) -> List[Message]:
         """Get message history, optionally limited."""
-        
-        if limit is None:
-            messages = self.messages
-        else:
-            messages = self.messages[-limit:]
 
-        return messages
+        return self.messages if limit is None else self.messages[-limit:]
+
 
     def get_user_messages(self) -> List[Message]:
         """Get all user messages."""
-        
-        user_messages = [
+
+        return [
             msg for msg in self.messages if msg.message_type == MessageType.USER
         ]
-        
-        return user_messages
+
 
     def get_ai_messages(self) -> List[Message]:
         """Get all AI messages."""
-        
-        ai_messages = [
+
+        return [
             msg for msg in self.messages if msg.message_type == MessageType.AI
         ]
-        
-        return ai_messages
+
 
     def get_system_messages(self) -> List[Message]:
         """Get all system messages."""
-        
-        system_messages = [
+
+        return [
             msg for msg in self.messages if msg.message_type == MessageType.SYSTEM
         ]
-        
-        return system_messages
+
 
     def get_conversation_length(self) -> int:
         """Get the total number of messages."""
-        length = len(self.messages)
-        
-        return length
+        return len(self.messages)
+
 
     def get_conversation_duration(self) -> float:
         """Get conversation duration in seconds."""
-        duration = (datetime.now() - self.start_time).total_seconds()
-        
-        return duration
+        return (datetime.now() - self.start_time).total_seconds()
+
 
     def get_customer_sentiment_trend(self) -> List[str]: # Changed from SentimentType to str
         """Get customer sentiment trend."""
-        trend = self.customer_context.sentiment_history
-        
-        return trend
+        return self.customer_context.sentiment_history
+
 
     def get_conversation_patterns(self) -> Dict[str, Any]:
         """Get conversation patterns and statistics."""
-        
-        patterns = {
+
+        return {
             "message_count": len(self.messages),
             "user_message_count": len(self.get_user_messages()),
             "ai_message_count": len(self.get_ai_messages()),
@@ -356,11 +345,10 @@ class Conversation:
             "quality_score": self.quality_score,
         }
 
-        return patterns
 
     def clear_conversation(self) -> None:
         """Clear the conversation and reset state."""
-        
+
         self.messages.clear()
         self.quality_score = None
         self.start_time = datetime.now()
@@ -372,14 +360,13 @@ class Conversation:
 
     def get_available_data(self) -> Dict[str, Any]:
         """Get all data available from previous tool results and context storage."""
-        
+
         available = {}
-        
+
         # First check context storage if it exists
-        if hasattr(self, 'context_storage') and self.context_storage:
-            print(f"📋 [CONVERSATION] Found context storage with keys: {list(self.context_storage.keys())}")
+        if hasattr(self, "context_storage") and self.context_storage:
             available.update(self.context_storage)
-        
+
         # Get recent tool results from messages (for backwards compatibility)
         for message in reversed(self.messages):
             if message.tool_results:
@@ -388,19 +375,18 @@ class Conversation:
                         data_type = type(tool_result.data).__name__
                         if data_type == "Order" and "current_order" not in available:
                             available["current_order"] = tool_result.data
-                            
+
                         elif data_type == "list" and tool_result.data and "recent_products" not in available:
                             # Check if it's products
-                            if hasattr(tool_result.data[0], 'product_name'):
+                            if hasattr(tool_result.data[0], "product_name"):
                                 available["recent_products"] = tool_result.data
-                                
-        print(f"📋 [CONVERSATION] Available data keys: {list(available.keys())}")
+
         return available
-    
+
     def export_conversation(self) -> Dict[str, Any]:
         """Export conversation data for analysis."""
-        
-        export_data = {
+
+        return {
             "conversation_id": f"conv_{int(self.start_time.timestamp())}",
             "start_time": self.start_time.isoformat(),
             "end_time": self.last_activity.isoformat(),
@@ -412,4 +398,3 @@ class Conversation:
             "messages": [msg.to_dict() for msg in self.messages],
         }
 
-        return export_data

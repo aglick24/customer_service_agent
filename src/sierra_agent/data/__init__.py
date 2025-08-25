@@ -1,7 +1,6 @@
 """Data types and models."""
 
 from .data_types import (
-    ConversationState,
     MultiTurnPlan,
     Order,
     PlanStatus,
@@ -10,7 +9,6 @@ from .data_types import (
 )
 
 __all__ = [
-    "ConversationState",
     "MultiTurnPlan",
     "Order",
     "PlanStatus",

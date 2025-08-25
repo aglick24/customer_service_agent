@@ -7,8 +7,7 @@ classification, sentiment analysis, and response generation with usage tracking.
 
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -33,10 +32,10 @@ class LLMClient:
         self.client: Optional[OpenAI] = None
 
         if self.api_key:
-            
+
             try:
                 self.client = OpenAI(api_key=self.api_key)
-                
+
             except ImportError:
                 self.api_key = None
                 self.client = None
@@ -48,10 +47,12 @@ class LLMClient:
     def call_llm(self, prompt: str, temperature: float = 0.7) -> str:
         """Make a direct API call to OpenAI - pure interface."""
         if not self.api_key:
-            raise ValueError("OpenAI API key is required")
+            msg = "OpenAI API key is required"
+            raise ValueError(msg)
 
         if not self.client:
-            raise ValueError("OpenAI client not initialized")
+            msg = "OpenAI client not initialized"
+            raise ValueError(msg)
 
         try:
             response = self.client.chat.completions.create(
@@ -63,12 +64,13 @@ class LLMClient:
 
             content = response.choices[0].message.content
             if not content:
-                raise ValueError("Empty response from OpenAI")
+                msg = "Empty response from OpenAI"
+                raise ValueError(msg)
 
             return content.strip()
 
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            logger.exception(f"OpenAI API error: {e}")
             raise
 
     # Prompt building unified in context_builder.py - old methods removed

@@ -10,9 +10,9 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from ..data.data_provider import DataProvider
-from ..data.data_types import ToolResult
-from ..utils.branding import Branding
+from sierra_agent.data.data_provider import DataProvider
+from sierra_agent.data.data_types import ToolResult
+from sierra_agent.utils.branding import Branding
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class BusinessTools:
 
     def get_order_status(self, email: str, order_number: str) -> ToolResult:
         """Get order status and tracking information."""
-        
+
         # Validate required parameters
         if not email or not order_number:
             return ToolResult(
@@ -40,7 +40,7 @@ class BusinessTools:
         if not order:
             return ToolResult(
                 success=False,
-                error=f"Order {order_number} not found for {email}. Please check your details.",
+                error=Branding.get_adventure_error_message("order_not_found"),
                 data=None
             )
 
@@ -48,7 +48,7 @@ class BusinessTools:
 
     def search_products(self, query: str) -> ToolResult:
         """Search for products based on query."""
-        
+
         if not query or not query.strip():
             return ToolResult(
                 success=False,
@@ -62,7 +62,7 @@ class BusinessTools:
         if not matching_products:
             return ToolResult(
                 success=False,
-                error=f"I couldn't find any products matching '{query}'. Try using different keywords like 'hiking', 'camping', or 'boots'.",
+                error=Branding.get_adventure_error_message("product_not_found"),
                 data=None
             )
 
@@ -74,7 +74,7 @@ class BusinessTools:
 
     def get_product_details(self, skus: List[str]) -> ToolResult:
         """Get detailed product information for specific SKUs."""
-        
+
         if not skus:
             return ToolResult(
                 success=False,
@@ -103,7 +103,7 @@ class BusinessTools:
 
     def get_product_recommendations(self, category: Optional[str] = None, preferences: Optional[List[str]] = None) -> ToolResult:
         """Get product recommendations based on category and preferences."""
-        
+
         # Get recommendations from DataProvider
         if category:
             recommendations = self.data_provider.get_products_by_category(category)
@@ -118,7 +118,7 @@ class BusinessTools:
         if not recommendations:
             return ToolResult(
                 success=False,
-                error="No product recommendations available at this time.",
+                error=Branding.get_adventure_error_message("product_not_found"),
                 data=None
             )
 
@@ -126,7 +126,7 @@ class BusinessTools:
 
     def get_company_info(self) -> ToolResult:
         """Get company information."""
-        
+
         result = {
             "company_name": Branding.COMPANY_NAME,
             "description": Branding.COMPANY_INTRO,
@@ -147,7 +147,7 @@ class BusinessTools:
 
     def get_contact_info(self) -> ToolResult:
         """Get contact information."""
-        
+
         result = {
             "contact_info": Branding.CONTACT_INFO,
             "social_media": {
@@ -165,7 +165,7 @@ class BusinessTools:
 
     def get_policies(self) -> ToolResult:
         """Get company policies."""
-        
+
         result = {
             "return_policy": "30-day return policy for unused items in original packaging",
             "shipping_info": "Free shipping on orders over $50, 2-5 business days",
@@ -183,38 +183,36 @@ class BusinessTools:
 
     def _extract_product_id(self, text: str) -> Optional[str]:
         """Extract product ID from text."""
-        
+
         # Look for patterns like PROD001, Product 001
         patterns = [r"PROD\d+", r"Product\s+(\d+)"]
 
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                product_id = (
+                return (
                     match.group(1) if len(match.groups()) > 0 else match.group(0)
                 )
-                
-                return product_id
+
 
         return None
 
     def _extract_email(self, text: str) -> Optional[str]:
         """Extract email address from text."""
-        
+
         # Look for email pattern
         email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
         match = re.search(email_pattern, text)
 
         if match:
-            email = match.group(0)
-            
-            return email
+            return match.group(0)
+
 
         return None
 
     def _extract_order_number(self, text: str) -> Optional[str]:
         """Extract order number from text with improved pattern matching."""
-        
+
         # Comprehensive patterns for order numbers including flexible formatting
         patterns = [
             r"#\s*W\s*\d+",           # #W001, # W001, #W 001
@@ -229,20 +227,19 @@ class BusinessTools:
             if match:
                 # Extract just the core order number part
                 order_text = match.group(0)
-                
+
                 # Find the W and number part
                 w_match = re.search(r"W\s*-?\s*(\d+)", order_text, re.IGNORECASE)
                 if w_match:
                     number_part = w_match.group(1)
-                    order_number = f"#W{number_part.zfill(3)}"  # Ensure consistent format like #W001
-                    
-                    return order_number
+                    return f"#W{number_part.zfill(3)}"  # Ensure consistent format like #W001
+
 
         return None
 
     def get_early_risers_promotion(self) -> ToolResult:
         """Check and provide Early Risers promotion if available."""
-        
+
         # Check if promotion is available
         promotion = self.data_provider.get_early_risers_promotion()
 
