@@ -108,7 +108,7 @@ class OrderHistoryTool(BaseTool):
     def execute(self, **kwargs) -> ToolResult:
         """Execute order history lookup."""
         email = kwargs["email"]
-        limit = kwargs.get("limit", 10)
+        _limit = kwargs.get("limit", 10)  # TODO: Implement actual limit functionality
         
         # This is where you'd implement order history logic
         # For now, return a placeholder response
@@ -116,7 +116,7 @@ class OrderHistoryTool(BaseTool):
             success=True,
             data={
                 "customer_email": email,
-                "message": f"Order history feature coming soon! 🏔️ Will show last {limit} orders.",
+                "message": f"Order history feature coming soon! 🏔️ Will show last {_limit} orders.",
                 "order_count": 0,
                 "orders": []
             },

@@ -12,12 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# IntentType removed - using simple strings for request types
-
-# Load environment variables
 load_dotenv()
-
-# Configure logging
 logger = logging.getLogger(__name__)
 
 class LLMClient:
@@ -32,10 +27,8 @@ class LLMClient:
         self.client: Optional[OpenAI] = None
 
         if self.api_key:
-
             try:
                 self.client = OpenAI(api_key=self.api_key)
-
             except ImportError:
                 self.api_key = None
                 self.client = None
@@ -72,5 +65,3 @@ class LLMClient:
         except Exception as e:
             logger.exception(f"OpenAI API error: {e}")
             raise
-
-    # Prompt building unified in context_builder.py - old methods removed

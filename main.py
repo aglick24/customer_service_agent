@@ -2,21 +2,18 @@
 """
 Sierra Agent - Main Entry Point
 
-AI-powered customer service agent for Sierra Outfitters with real-time
-quality monitoring, comprehensive analytics, and intelligent planning.
+AI-powered customer service agent for Sierra Outfitters with intelligent planning
+and comprehensive outdoor gear assistance.
 """
 
 import sys
 import os
 import logging
-from datetime import datetime
 
-# Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from sierra_agent import SierraAgent, Branding, ErrorMessages
+from sierra_agent import SierraAgent, Branding
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'

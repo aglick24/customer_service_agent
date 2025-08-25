@@ -23,12 +23,8 @@ class LLMService:
 
     def __init__(self, thinking_model: str = "gpt-4o", low_latency_model: str = "gpt-4o-mini"):
         """Initialize LLM service with context builder and clients."""
-
-        # Initialize context building components
         self.context_builder = ContextBuilder()
         self.prompt_builder = LLMPromptBuilder()
-
-        # Initialize LLM clients
         self.thinking_client = LLMClient(model_name=thinking_model, max_tokens=2000)
         self.low_latency_client = LLMClient(model_name=low_latency_model, max_tokens=1000)
 
@@ -42,36 +38,23 @@ class LLMService:
         use_thinking_model: bool = False
     ) -> str:
         """Generate customer service response using unified context system."""
-
         try:
-            # Build strongly-typed context
             context = self.context_builder.build_customer_service_context(
                 user_input=user_input,
                 tool_results=tool_results or [],
                 conversation_context=conversation_context
             )
 
-            # Build prompt from context
             prompt = self.prompt_builder.build_customer_service_prompt(context)
-
-            # Choose appropriate LLM client
             client = self.thinking_client if use_thinking_model else self.low_latency_client
-
-            # Generate response
             return client.call_llm(prompt, temperature=0.7)
-
 
         except Exception as e:
             logger.exception(f"Error generating customer service response: {e}")
-
             return self._get_fallback_customer_service_response(user_input)
-
-
-
 
     def _get_fallback_customer_service_response(self, user_input: str) -> str:
         """Generate fallback response when LLM fails."""
-
         return """I'm experiencing some technical difficulties right now, but I'm here to help!
 
 Could you please rephrase your question or provide more specific details about what you're looking for?
@@ -85,26 +68,13 @@ Thank you for your patience!
 
 - Sierra Outfitters Customer Service Team"""
 
-    def _get_fallback_planning_suggestions(self, user_input: str, available_data: Optional[Dict[str, Any]] = None) -> List[str]:
+    def _get_fallback_planning_suggestions(self, _user_input: str, _available_data: Optional[Dict[str, Any]] = None) -> List[str]:
         """Generate context-aware fallback planning suggestions."""
-
-        user_lower = user_input.lower()
-        suggestions = []
-
-        # Check for vague requests that should use context
-        vague_requests = ["anything else", "what else", "more", "other", "else", "next", "additionally", "further"]
-        is_vague = any(phrase in user_lower for phrase in vague_requests) or len(user_input.strip()) < 10
-
-        # REMOVED: All hardcoded tool suggestions 
-        # The tool orchestrator registry is now the single source of truth
-        # LLM analysis with dynamic tool discovery handles all tool selection
-
-        return suggestions
+        return []
 
     def analyze_vague_request_and_suggest(self, user_input: str, available_data: Optional[Dict[str, Any]] = None, conversation_context: Optional[str] = None, available_tools: Optional[List[str]] = None, tool_orchestrator=None) -> List[str]:
         """Use LLM to analyze requests and suggest the right sequence of actions."""
         try:
-            # Build a specialized prompt for vague request analysis
             context_summary = ""
             if available_data:
                 context_items = []
@@ -122,22 +92,18 @@ Thank you for your patience!
             
             conversation_info = f"\nConversation Context: {conversation_context}" if conversation_context else ""
             
-            # EXTENSIBLE: Get tools dynamically from tool orchestrator
             if tool_orchestrator and hasattr(tool_orchestrator, 'get_available_tools'):
                 tools_list = tool_orchestrator.get_available_tools()
             else:
-                # Fallback to updated tool names
                 tools_list = available_tools or [
                     "get_order_status", "get_product_info", "browse_catalog",
                     "get_recommendations", "get_early_risers_promotion",
                     "get_company_info", "get_contact_info", "get_policies"
                 ]
             
-            # EXTENSIBLE: Get tool descriptions from orchestrator if available
             if tool_orchestrator and hasattr(tool_orchestrator, 'get_tools_for_llm_planning'):
                 tools_description = tool_orchestrator.get_tools_for_llm_planning()
             else:
-                # Fallback tool descriptions
                 tool_descriptions = {
                     "get_order_status": "get_order_status(email, order_number) - Get order details, status, and tracking info",
                     "get_product_info": "get_product_info(product_identifier) - Get detailed product information by SKU or name",
@@ -259,69 +225,6 @@ Return only the response type or tool name(s), nothing else."""
         except Exception as e:
             logger.exception(f"Error in vague request analysis: {e}")
             return self._get_fallback_planning_suggestions(user_input, available_data)
-
-    def generate_recommendation_search_terms(self, order_context: Optional[Dict[str, Any]] = None, product_context: Optional[List[Any]] = None) -> str:
-        """Use LLM to generate intelligent search terms for product recommendations based on order/product context."""
-        try:
-            # Build context summary for the LLM
-            context_parts = []
-            
-            if order_context and "current_order" in order_context:
-                order = order_context["current_order"]
-                order_info = f"Customer has ordered: {', '.join(getattr(order, 'products_ordered', []))}"
-                context_parts.append(order_info)
-            
-            if product_context:
-                product_names = []
-                product_descriptions = []
-                for product in product_context:
-                    if hasattr(product, 'product_name'):
-                        product_names.append(product.product_name)
-                    if hasattr(product, 'description'):
-                        product_descriptions.append(product.description[:100])  # Limit length
-                
-                if product_names:
-                    context_parts.append(f"Products: {', '.join(product_names)}")
-                if product_descriptions:
-                    context_parts.append(f"Descriptions: {'. '.join(product_descriptions)}")
-            
-            if not context_parts:
-                return "outdoor adventure gear"
-            
-            context_summary = " | ".join(context_parts)
-            
-            prompt = f"""Based on the customer's order and product context, generate the best search terms for finding complementary or related outdoor products.
-
-Context: {context_summary}
-
-Instructions:
-1. Analyze what the customer has already ordered/viewed
-2. Think about what complementary products would be useful for their outdoor activities
-3. Generate search terms that would find related gear, accessories, or complementary items
-4. Focus on outdoor/adventure terms that match their interests
-5. Return only the search terms, nothing else
-
-Examples:
-- If they ordered hiking boots: "hiking socks gear trekking poles"  
-- If they ordered a tent: "sleeping bags camping cookware"
-- If they ordered backpack: "water bottles hiking gear outdoor"
-
-Response: Just the search terms (e.g., "hiking camping outdoor gear")"""
-
-            response = self.low_latency_client.call_llm(prompt, temperature=0.2)
-            
-            # Clean up the response and return just the search terms
-            search_terms = response.strip().strip('"').strip("'").lower()
-            
-            # Validate it's reasonable (not empty, not too long)
-            if search_terms and len(search_terms) < 100:
-                return search_terms
-            else:
-                return "outdoor adventure gear"
-                
-        except Exception as e:
-            logger.exception(f"Error generating recommendation search terms: {e}")
-            return "outdoor adventure gear"
 
     def validate_tool_addressed_request(self, user_request: str, tool_executed: str, tool_result_summary: str, conversation_context: Optional[str] = None) -> Dict[str, Any]:
         """Use LLM to check if the executed tool actually addressed what the user asked for."""

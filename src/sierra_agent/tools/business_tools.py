@@ -21,12 +21,8 @@ class BusinessTools:
         self.data_provider = DataProvider()
         logger.info("BusinessTools initialized with DataProvider")
 
-    # REMOVED: get_order_status, search_products, get_product_details, get_product_recommendations  
-    # These are now handled by the extensible tool system in order_tools.py and product_tools.py
-
     def get_company_info(self) -> ToolResult:
         """Get company information."""
-
         result = {
             "company_name": Branding.COMPANY_NAME,
             "description": Branding.COMPANY_INTRO,
@@ -79,17 +75,11 @@ class BusinessTools:
             error=None
         )
 
-    # REMOVED: Helper methods (_extract_product_id, _extract_email, _extract_order_number)
-    # These are no longer needed with the new extensible tool system
-
     def get_early_risers_promotion(self) -> ToolResult:
         """Check and provide Early Risers promotion if available."""
-
-        # Check if promotion is available
         promotion = self.data_provider.get_early_risers_promotion()
 
         if promotion:
-            # Create a comprehensive promotion result using the Promotion object
             result = {
                 "available": True,
                 "discount_code": promotion.discount_code,
@@ -100,7 +90,7 @@ class BusinessTools:
             }
 
             return ToolResult(success=True, data=result, error=None)
-        # Get current time information for better error message
+            
         from datetime import timezone
         pacific_tz = timezone(timedelta(hours=-8))
         current_time = datetime.now(pacific_tz)
@@ -115,7 +105,4 @@ class BusinessTools:
         }
 
         return ToolResult(success=True, data=result, error=None)
-
-    # REMOVED: _extract_product_category and _extract_preferences
-    # These are handled by the new extensible tool system with better parameter validation
 
