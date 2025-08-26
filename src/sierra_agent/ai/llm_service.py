@@ -46,8 +46,11 @@ class LLMService:
 
             prompt_str = self.prompt_builder.build_customer_service_prompt(context)
             from sierra_agent.ai.prompt_types import Prompt
-            prompt = Prompt(system_prompt=prompt_str, user_message="", temperature=0.7)
+            # Put the customer request in the user message, not system prompt
+            user_message = f"Customer says: \"{user_input}\""
+            prompt = Prompt(system_prompt=prompt_str, user_message=user_message, temperature=0.7)
             client = self.thinking_client if use_thinking_model else self.low_latency_client
+            
             return client.call_llm(prompt)
 
         except Exception as e:
@@ -82,7 +85,7 @@ Thank you for your patience!
                 tools_list = available_tools or [
                     "get_order_status", "get_product_info", "browse_catalog",
                     "get_recommendations", "get_early_risers_promotion",
-                    "get_company_info", "get_contact_info", "get_policies"
+                    "get_company_info"  # Removed get_contact_info and get_policies - not needed for assignment
                 ]
                 tools_description = None
             
@@ -97,21 +100,25 @@ Thank you for your patience!
             response = self.low_latency_client.call_llm(prompt)
             
             try:
-                suggestions = json.loads(response.strip())
-                if isinstance(suggestions, list):
-                    return suggestions
-                elif isinstance(suggestions, dict) and "action" in suggestions:
-                    # Handle new structured output format with {"action": "tool_name_or_response"}
-                    action = suggestions["action"]
-                    if "," in action:
+                # With structured output, response should already be parsed JSON
+                if isinstance(response, dict):
+                    suggestions = response
+                else:
+                    # Fallback to JSON parsing if needed
+                    suggestions = json.loads(response.strip())
+                
+                # Extract action from structured response
+                if isinstance(suggestions, dict) and "action" in suggestions:
+                    action_value = suggestions["action"]
+                    if "," in action_value:
                         # Multiple comma-separated tools
-                        return [tool.strip() for tool in action.split(",")]
+                        return [tool.strip() for tool in action_value.split(",")]
                     else:
                         # Single action
-                        return [action]
-                else:
-                    logger.warning(f"LLM returned unexpected response format: {response}")
-                    return self._get_fallback_planning_suggestions(user_input, None)
+                        return [action_value]
+                
+                logger.warning(f"LLM returned unexpected response format: {response}")
+                return self._get_fallback_planning_suggestions(user_input, None)
             except json.JSONDecodeError:
                 logger.warning(f"Could not parse LLM response as JSON: {response}")
                 return self._get_fallback_planning_suggestions(user_input, None)

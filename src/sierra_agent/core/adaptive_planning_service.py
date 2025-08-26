@@ -168,7 +168,7 @@ class AdaptivePlanningService:
             logger.exception(f"Error generating missing info message with LLM: {e}")
             return "I need more information to help with that request."
     
-    def _format_success_response(self, executed_step: ExecutedStep, user_input: str) -> str:
+    def _format_success_response(self, executed_step: ExecutedStep, user_input: str, plan: EvolvingPlan = None) -> str:
         """Generate a natural language response using LLM based on the executed step."""
         # Create a ToolResult from the executed step
         tool_result = ToolResult(
@@ -183,7 +183,7 @@ class AdaptivePlanningService:
                 response = self.llm_service.generate_customer_service_response(
                     user_input=user_input,
                     tool_results=[tool_result],
-                    plan_context=None,  # Pass None or create minimal context
+                    plan_context=plan.context if plan else None,  # Pass the actual plan context!
                     use_thinking_model=False  # Use fast model for response generation
                 )
                 return response
@@ -226,36 +226,28 @@ class AdaptivePlanningService:
             return "Hello! 🏔️ Welcome to Sierra Outfitters! I'm excited to help you with your outdoor adventures. What can I assist you with today?"
 
     def _generate_fallback_llm_response(self, executed_step: ExecutedStep, user_input: str) -> str:
-        """Generate fallback response using LLM with simplified context."""
+        """Generate fallback response using the same customer service system."""
         if not self.llm_service:
             return "I was able to process your request, but I'm having trouble explaining the results right now."
             
         try:
-            # Create simplified data summary for LLM
-            tool_name = executed_step.tool_name
-            result_data = executed_step.result_data
+            # Create proper ToolResult for the customer service response system
+            from sierra_agent.data.data_types import ToolResult
             
-            # Create basic data description
-            data_summary = "No data returned"
-            if result_data:
-                if isinstance(result_data, list) and result_data:
-                    data_summary = f"Found {len(result_data)} items"
-                elif hasattr(result_data, '__dict__'):
-                    data_summary = f"Retrieved {type(result_data).__name__} data"
-                else:
-                    data_summary = "Retrieved data"
-            
-            # Create minimal context for template
-            minimal_context = ConversationContext()
-            
-            prompt = PromptTemplates.build_tool_result_response_prompt(
-                plan_context=minimal_context,
-                user_input=user_input,
-                result_data=data_summary
+            tool_result = ToolResult(
+                data=executed_step.result_data,
+                success=executed_step.was_successful,
+                error=executed_step.result.error if not executed_step.was_successful else None
             )
             
-            response = self.llm_service.low_latency_client.call_llm(prompt)
-            return response.strip().strip('"').strip("'")
+            # Use the same customer service response generation as the main path
+            response = self.llm_service.generate_customer_service_response(
+                user_input=user_input,
+                tool_results=[tool_result],
+                plan_context=None,  # No plan context available in fallback
+                use_thinking_model=False
+            )
+            return response
             
         except Exception as e:
             logger.exception(f"Error in fallback LLM response: {e}")
@@ -327,9 +319,14 @@ class AdaptivePlanningService:
                 if plan.context.current_order:
                     order = plan.context.current_order
                     if hasattr(order, 'products_ordered') and order.products_ordered:
-                        # Pick the first SKU for lookup
+                        # Use comma-separated SKUs for multiple products
+                        if len(order.products_ordered) > 1:
+                            product_identifiers = ",".join(order.products_ordered)
+                        else:
+                            product_identifiers = order.products_ordered[0]
+                        
                         return {
-                            "product_identifier": order.products_ordered[0],
+                            "product_identifier": product_identifiers,
                             "include_recommendations": True
                         }
                 
@@ -464,7 +461,7 @@ RESPONSE (tool names only):"""
                 return plan, missing_info
         
         # Tool succeeded and addressed the request - return formatted response
-        response = self._format_success_response(executed_step, user_input)
+        response = self._format_success_response(executed_step, user_input, plan)
         return plan, response
     
     def _execute_multistep_actions(self, plan: EvolvingPlan, actions: List[str], user_input: str, tool_orchestrator: ToolOrchestrator) -> Tuple[EvolvingPlan, str]:

@@ -37,6 +37,7 @@ class ConversationContext:
     """Unified context system - replaces all other context approaches."""
     # Core business data
     customer_email: Optional[str] = None
+    customer_name: Optional[str] = None
     order_number: Optional[str] = None
     current_order: Optional[Order] = None
     found_products: List[Product] = field(default_factory=list)
@@ -67,11 +68,24 @@ class ConversationContext:
         if tool_name == "get_order_status":
             email = self.customer_email or self._extract_email(user_input)
             order_num = self.order_number or self._extract_order_number(user_input)
-            return {"email": email, "order_number": order_num}
+            name = self.customer_name or self._extract_name(user_input)
+            params = {"email": email, "order_number": order_num}
+            if name:
+                params["name"] = name
+            return params
         elif tool_name == "get_product_details":
             if self.current_order:
                 return {"skus": self.current_order.products_ordered}
             return {"skus": []}
+        elif tool_name == "get_product_info":
+            # Extract SKU from user input or use order context
+            if self.current_order and self.current_order.products_ordered:
+                # If user is asking about their ordered products, return the first SKU
+                # NOTE: For multiple products, the planner should call this tool multiple times
+                return {"product_identifier": self.current_order.products_ordered[0]}
+            # Otherwise try to extract from user input
+            # This is a simple implementation - could be enhanced
+            return {"product_identifier": user_input}
         elif tool_name == "search_products":
             query = self.search_query or user_input
             return {"query": query}
@@ -86,6 +100,9 @@ class ConversationContext:
                 return {"category": None, "preferences": product_preferences}
             else:
                 return {"category": None, "preferences": self.customer_preferences}
+        # elif tool_name == "get_order_history":  # COMMENTED OUT - Not needed for assignment
+        #     email = self.customer_email or self._extract_email(user_input)
+        #     return {"email": email, "limit": 10}
         else:
             return {}
     
@@ -97,6 +114,10 @@ class ConversationContext:
             return bool(params.get("skus"))
         elif tool_name == "search_products":
             return bool(params.get("query"))
+        elif tool_name == "get_product_info":
+            return bool(params.get("product_identifier"))
+        # elif tool_name == "get_order_history":  # COMMENTED OUT - Not needed for assignment
+        #     return bool(params.get("email"))
         else:
             return True
             
@@ -111,6 +132,21 @@ class ConversationContext:
         if match:
             # Always return with # prefix to match data format
             return f"#{match.group(1)}"
+        return None
+    
+    def _extract_name(self, text: str) -> Optional[str]:
+        """Simple name extraction - look for proper names."""
+        # Look for patterns like "I'm John", "My name is Jane", "John Smith", etc.
+        patterns = [
+            r"(?:I'm|I am|my name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            r"^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)$",  # Just a name by itself
+            r"([A-Z][a-z]+\s+[A-Z][a-z]+)",  # First Last name pattern
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text.strip(), re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
         return None
     
     # Unified context methods - replace all scattered context systems
@@ -238,6 +274,12 @@ class EvolvingPlan:
             order_num = self.context._extract_order_number(user_input)
             if order_num:
                 self.context.order_number = order_num
+                
+        # Extract name if we don't have one
+        if not self.context.customer_name:
+            name = self.context._extract_name(user_input)
+            if name:
+                self.context.customer_name = name
     
     def print_plan(self) -> None:
         """Print current plan state."""

@@ -380,7 +380,7 @@ class ProductDetailsTool(BaseTool):
                 name="product_identifier",
                 param_type=str,
                 required=True,
-                description="Product SKU (e.g., SOBP001) or partial product name"
+                description="Product SKU (e.g., SOBP001) or partial product name. For multiple products, use comma-separated SKUs (e.g., 'SOBP001,SOBT003')"
             ),
             ToolParameter(
                 name="include_recommendations",
@@ -396,49 +396,119 @@ class ProductDetailsTool(BaseTool):
         identifier = kwargs["product_identifier"]
         include_recs = kwargs.get("include_recommendations", True)
         
-        # Try to find product by SKU first
-        product = self.data_provider.get_product_by_sku(identifier)
-        
-        if not product:
-            # Try searching by name
-            search_results = self.data_provider.search_products(identifier)
-            if search_results:
-                product = search_results[0]  # Take the first match
-        
-        if not product:
+        # Check if multiple products are requested (comma-separated)
+        if ',' in identifier:
+            # Handle multiple products
+            skus = [sku.strip() for sku in identifier.split(',')]
+            products_info = []
+            not_found = []
+            
+            for sku in skus:
+                # Try to find product by SKU first
+                product = self.data_provider.get_product_by_sku(sku)
+                
+                if not product:
+                    # Try searching by name
+                    search_results = self.data_provider.search_products(sku)
+                    if search_results:
+                        product = search_results[0]  # Take the first match
+                
+                if product:
+                    product_info = {
+                        "product": product,
+                        "details": {
+                            "name": product.product_name,
+                            "sku": product.sku,
+                            "description": product.description,
+                            "categories": product.tags,
+                            "inventory_status": "In Stock" if product.inventory > 0 else "Out of Stock",
+                            "inventory_count": product.inventory
+                        }
+                    }
+                    products_info.append(product_info)
+                else:
+                    not_found.append(sku)
+            
+            if not products_info:
+                return ToolResult(
+                    success=False,
+                    error=f"None of the products '{identifier}' were found. Try searching our catalog with 'browse_catalog'!",
+                    data=None
+                )
+            
+            # Add recommendations for multiple products (use first product's tags)
+            if include_recs and products_info:
+                first_product = products_info[0]["product"]
+                related_products: List[Any] = []
+                for tag in first_product.tags[:2]:  # Use first 2 tags
+                    tag_products = self.data_provider.get_products_by_category(tag)
+                    for tag_product in tag_products[:2]:
+                        if tag_product not in related_products and all(tag_product.sku != p["product"].sku for p in products_info):
+                            related_products.append(tag_product)
+                
+                # Add recommendations to the result
+                result_data = {
+                    "products": products_info,
+                    "related_products": related_products[:3],
+                    "not_found": not_found if not_found else None
+                }
+            else:
+                result_data = {
+                    "products": products_info,
+                    "not_found": not_found if not_found else None
+                }
+            
             return ToolResult(
-                success=False,
-                error=f"Product '{identifier}' not found. Try searching our catalog with 'browse_catalog'!",
-                data=None
+                success=True,
+                data=result_data,
+                error=None
             )
         
-        # Build detailed response
-        product_info = {
-            "product": product,
-            "details": {
-                "name": product.product_name,
-                "sku": product.sku,
-                "description": product.description,
-                "categories": product.tags,
-                "inventory_status": "In Stock" if product.inventory > 0 else "Out of Stock",
-                "inventory_count": product.inventory
-            }
-        }
-        
-        # Add recommendations if requested
-        if include_recs and product.inventory > 0:
-            # Get 2-3 related products
-            related_products: List[Any] = []
-            for tag in product.tags[:2]:  # Use first 2 tags
-                tag_products = self.data_provider.get_products_by_category(tag)
-                for related in tag_products:
-                    if related.sku != product.sku and len(related_products) < 3:
-                        related_products.append(related)
+        else:
+            # Handle single product (existing logic)
+            # Try to find product by SKU first
+            product = self.data_provider.get_product_by_sku(identifier)
             
-            product_info["related_products"] = related_products
-        
-        return ToolResult(
-            success=True,
-            data=product_info,
-            error=None
-        )
+            if not product:
+                # Try searching by name
+                search_results = self.data_provider.search_products(identifier)
+                if search_results:
+                    product = search_results[0]  # Take the first match
+            
+            if not product:
+                return ToolResult(
+                    success=False,
+                    error=f"Product '{identifier}' not found. Try searching our catalog with 'browse_catalog'!",
+                    data=None
+                )
+            
+            # Build detailed response
+            product_info = {
+                "product": product,
+                "details": {
+                    "name": product.product_name,
+                    "sku": product.sku,
+                    "description": product.description,
+                    "categories": product.tags,
+                    "inventory_status": "In Stock" if product.inventory > 0 else "Out of Stock",
+                    "inventory_count": product.inventory
+                }
+            }
+            
+            # Add recommendations if requested
+            if include_recs and product.inventory > 0:
+                # Get 2-3 related products
+                related_products: List[Any] = []
+                for tag in product.tags[:2]:  # Use first 2 tags
+                    tag_products = self.data_provider.get_products_by_category(tag)
+                    for related in tag_products:
+                        if related.sku != product.sku and len(related_products) < 3:
+                            related_products.append(related)
+                
+                product_info["related_products"] = related_products
+            
+            return ToolResult(
+                success=True,
+                data=product_info,
+                error=None
+            )

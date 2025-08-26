@@ -12,7 +12,7 @@ from sierra_agent.data.data_provider import DataProvider
 from sierra_agent.data.data_types import ToolResult
 
 from .base_tool import BaseTool, ToolRegistry
-from .order_tools import OrderStatusTool, OrderHistoryTool
+from .order_tools import OrderStatusTool  # OrderHistoryTool commented out - not needed for assignment
 from .catalog_tools import ProductCatalogTool, SmartRecommendationTool, ProductDetailsTool
 from .business_tools import BusinessTools  # Keep for legacy support
 
@@ -47,8 +47,8 @@ class ToolOrchestrator:
         return {
             "get_early_risers_promotion": self.business_tools.get_early_risers_promotion,
             "get_company_info": self.business_tools.get_company_info,
-            "get_contact_info": self.business_tools.get_contact_info,
-            "get_policies": self.business_tools.get_policies,
+            # "get_contact_info": self.business_tools.get_contact_info,  # COMMENTED OUT - Not needed for assignment
+            # "get_policies": self.business_tools.get_policies,  # COMMENTED OUT - Not needed for assignment
         }
 
     def _register_all_tools(self) -> None:
@@ -57,7 +57,7 @@ class ToolOrchestrator:
         # Register new extensible tools
         tools_to_register = [
             OrderStatusTool(self.data_provider),
-            OrderHistoryTool(self.data_provider),
+            # OrderHistoryTool(self.data_provider),  # COMMENTED OUT - Not needed for assignment requirements
             ProductCatalogTool(self.data_provider),
             SmartRecommendationTool(self.data_provider),
             ProductDetailsTool(self.data_provider),
@@ -142,8 +142,8 @@ class ToolOrchestrator:
         legacy_tool_info = {
             "get_early_risers_promotion": "Check Early Risers promotion availability (8-10 AM PT)",
             "get_company_info": "Get Sierra Outfitters company information and values",
-            "get_contact_info": "Get contact details and social media information", 
-            "get_policies": "Get return, shipping, and warranty policy information"
+            # "get_contact_info": "Get contact details and social media information",  # COMMENTED OUT
+            # "get_policies": "Get return, shipping, and warranty policy information"  # COMMENTED OUT
         }
         
         for tool_name in self.legacy_tools:

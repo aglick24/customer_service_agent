@@ -259,6 +259,15 @@ class LLMPromptBuilder:
         # Construct prompt with clear structure and outdoor personality
         return f"""You are a friendly customer service agent for Sierra Outfitters, a premium outdoor gear retailer. 
 
+🚨 CRITICAL: YOU HAVE BUSINESS DATA AVAILABLE - YOU MUST USE IT! 🚨
+
+Current Business Data:
+{business_data}
+
+{history_context}
+
+🏔️ YOUR PRIMARY TASK: PRESENT THE BUSINESS DATA ABOVE TO THE CUSTOMER 🏔️
+
 BRAND PERSONALITY:
 - Show enthusiasm for outdoor activities and adventures
 - Include occasional mountain emojis (🏔️) for friendly emphasis
@@ -266,27 +275,28 @@ BRAND PERSONALITY:
 - Use phrases like "Onward into the unknown!" when appropriate
 - Be helpful with an outdoorsy, adventurous spirit
 
-{history_context}
+MANDATORY INSTRUCTIONS:
 
-Current Customer Request: "{context.user_input}"
+🔥 RULE #1: YOU HAVE ORDER/PRODUCT DATA ABOVE - YOU MUST PRESENT IT TO THE CUSTOMER! 🔥
 
-Current Business Data:
-{business_data}
-
-Instructions:
-- Provide a helpful, accurate response to the customer's request using ONLY the business data and context above
+- When order information is available, present the order details clearly including status, products, and tracking info
+- When product information is available, describe the products with their actual names and features
 - Reference specific identifiers (order numbers, SKUs, names) exactly as provided
 - Be specific and include relevant details from the data
 - If referencing previous interactions, use the exact identifiers provided
-- If no relevant data is available, explain what information you need
+
+🚫 NEVER SAY "MESSAGE DIDN'T COME THROUGH" WHEN YOU HAVE BUSINESS DATA! 🚫
+🚫 DO NOT IGNORE THE BUSINESS DATA SECTION! 🚫
+🚫 DO NOT ASK WHAT THEY NEED IF ORDER DATA IS SHOWN ABOVE! 🚫
+
 - CRITICAL: Never invent, assume, or hallucinate product details, names, or SKUs not in the data
 - CRITICAL: Use the EXACT product names and descriptions as provided in the business data
 - If some products are missing from the data, acknowledge what you found and what's missing
 - For product recommendations, only suggest items that exist in your actual data
-- If asked for recommendations but no recommendation data is provided, offer to look up specific recommendations rather than inventing products
-- If the actual products don't match outdoor themes, be honest about what they are
 - Include outdoor enthusiasm naturally when appropriate, but accuracy comes first
-- NEVER make up product names, SKUs, or descriptions that aren't in the provided business data"""
+- NEVER make up product names, SKUs, or descriptions that aren't in the provided business data
+
+If you have no business data, then explain what information you need."""
 
 
     def build_planning_prompt(self, context: PlanningContext) -> str:
@@ -453,8 +463,8 @@ Respond with ONLY a JSON array of tool names for the next steps:
             "get_recommendations": "Get personalized product recommendations based on customer context",
             "get_early_risers_promotion": "Check for available promotions and discounts",
             "get_company_info": "Get general company information",
-            "get_contact_info": "Get contact information for customer service",
-            "get_policies": "Get information about company policies"
+            # "get_contact_info": "Get contact information for customer service",  # COMMENTED OUT - Not needed for assignment
+            # "get_policies": "Get information about company policies"  # COMMENTED OUT - Not needed for assignment
         }
 
         formatted = []
@@ -492,9 +502,6 @@ Respond with ONLY a JSON array of tool names for the next steps:
         """Replace adaptive_planning_service.py:235-270 inline prompt"""
         return PromptTemplates.build_no_data_response_prompt(plan_context, user_input, response_type)
     
-    def build_tool_result_response_prompt(self, plan_context, user_input: str, result_data: str) -> Prompt:
-        """Replace adaptive_planning_service.py:287-320 inline prompt"""
-        return PromptTemplates.build_tool_result_response_prompt(plan_context, user_input, result_data)
     
     def build_vague_request_analysis_prompt(self, plan_context, user_input: str, available_tools: List[str], tools_description: str = None):
         """Replace llm_service.py:122-180 inline prompt"""

@@ -46,6 +46,13 @@ class OrderStatusTool(BaseTool):
                 required=True,
                 description="Order number (e.g., #W001)",
                 validation_rules={"pattern": r"#?W\d+", "min_length": 2}
+            ),
+            ToolParameter(
+                name="name",
+                param_type=str,
+                required=False,
+                description="Customer name (optional, for verification)",
+                validation_rules={"min_length": 2}
             )
         ]
     
@@ -53,6 +60,7 @@ class OrderStatusTool(BaseTool):
         """Execute order status lookup."""
         email = kwargs["email"]
         order_number = kwargs["order_number"]
+        name = kwargs.get("name")  # Optional parameter
         
         # Normalize order number format
         if not order_number.startswith("#"):
@@ -71,54 +79,55 @@ class OrderStatusTool(BaseTool):
         return ToolResult(success=True, data=order, error=None)
 
 
-class OrderHistoryTool(BaseTool):
-    """Tool for getting customer order history (extensible example)."""
-    
-    def __init__(self, data_provider: DataProvider):
-        self.data_provider = data_provider
-    
-    @property
-    def tool_name(self) -> str:
-        return "get_order_history"
-    
-    @property
-    def description(self) -> str:
-        return "Get customer's order history and purchase patterns"
-    
-    @property
-    def parameters(self) -> List[ToolParameter]:
-        return [
-            ToolParameter(
-                name="email",
-                param_type=str,
-                required=True,
-                description="Customer email address",
-                validation_rules={"pattern": r".+@.+\..+"}
-            ),
-            ToolParameter(
-                name="limit",
-                param_type=int,
-                required=False,
-                description="Maximum number of orders to return",
-                default=10,
-                validation_rules={"min_value": 1, "max_value": 100}
-            )
-        ]
-    
-    def execute(self, **kwargs) -> ToolResult:
-        """Execute order history lookup."""
-        email = kwargs["email"]
-        _limit = kwargs.get("limit", 10)  # TODO: Implement actual limit functionality
-        
-        # This is where you'd implement order history logic
-        # For now, return a placeholder response
-        return ToolResult(
-            success=True,
-            data={
-                "customer_email": email,
-                "message": f"Order history feature coming soon! 🏔️ Will show last {_limit} orders.",
-                "order_count": 0,
-                "orders": []
-            },
-            error=None
-        )
+# COMMENTED OUT - Not needed for assignment requirements
+# class OrderHistoryTool(BaseTool):
+#     """Tool for getting customer order history (extensible example)."""
+#     
+#     def __init__(self, data_provider: DataProvider):
+#         self.data_provider = data_provider
+#     
+#     @property
+#     def tool_name(self) -> str:
+#         return "get_order_history"
+#     
+#     @property
+#     def description(self) -> str:
+#         return "Get customer's order history and purchase patterns"
+#     
+#     @property
+#     def parameters(self) -> List[ToolParameter]:
+#         return [
+#             ToolParameter(
+#                 name="email",
+#                 param_type=str,
+#                 required=True,
+#                 description="Customer email address",
+#                 validation_rules={"pattern": r".+@.+\..+"}
+#             ),
+#             ToolParameter(
+#                 name="limit",
+#                 param_type=int,
+#                 required=False,
+#                 description="Maximum number of orders to return",
+#                 default=10,
+#                 validation_rules={"min_value": 1, "max_value": 100}
+#             )
+#         ]
+#     
+#     def execute(self, **kwargs) -> ToolResult:
+#         """Execute order history lookup."""
+#         email = kwargs["email"]
+#         _limit = kwargs.get("limit", 10)  # TODO: Implement actual limit functionality
+#         
+#         # This is where you'd implement order history logic
+#         # For now, return a placeholder response
+#         return ToolResult(
+#             success=True,
+#             data={
+#                 "customer_email": email,
+#                 "message": f"Order history feature coming soon! 🏔️ Will show last {_limit} orders.",
+#                 "order_count": 0,
+#                 "orders": []
+#             },
+#             error=None
+#         )

@@ -37,7 +37,7 @@ Examples:
 - Existing: "find hiking boots", New: "what's your return policy" → NEW_PLAN
 - Existing: "order status for W001", New: "what products are in it" → CONTINUE
 
-Respond with JSON containing your decision."""
+Provide your decision."""
         
         user_message = f'Existing Plan Request: "{existing_request}"\nNew User Input: "{user_input}"'
         
@@ -58,7 +58,7 @@ Respond with JSON containing your decision."""
             system_prompt=system_prompt,
             user_message=user_message,
             expected_json_schema=json_schema,
-            use_structured_output=True,
+            use_structured_output=True,  # Use API structured output properly
             temperature=0.1
         )
 
@@ -118,35 +118,6 @@ Generate an enthusiastic, outdoor-branded response."""
             temperature=0.7
         )
 
-    @staticmethod
-    def build_tool_result_response_prompt(plan_context: ConversationContext, user_input: str, result_data: str) -> Prompt:
-        """Replace adaptive_planning_service.py:287-320 inline prompt"""
-        system_prompt = f"""Generate a friendly customer service response based on the tool execution.
-
-Tool Result Data:
-{result_data}
-
-Instructions:
-1. Use the tool result data to provide a helpful response
-2. Include Sierra Outfitters outdoor/adventure branding:
-   - Mountain emoji 🏔️ 
-   - Adventure language and enthusiasm
-   - Reference outdoor themes naturally
-3. Be specific and reference the actual data provided
-4. If it's order information, include relevant details
-5. If it's product information, highlight key features
-6. End with offering additional help
-7. Keep the tone friendly and professional but adventurous
-
-Generate a response that uses the tool result data effectively."""
-        
-        user_message = f'Customer Request: "{user_input}"'
-        
-        return Prompt(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            temperature=0.7
-        )
 
     @staticmethod
     def build_vague_request_analysis_prompt(plan_context: ConversationContext, user_input: str, available_tools: List[str], tools_description: str = None) -> Prompt:
@@ -154,6 +125,10 @@ Generate a response that uses the tool result data effectively."""
         context_summary = ""
         if plan_context.customer_email:
             context_summary += f"Customer email: {plan_context.customer_email}\n"
+        if plan_context.customer_name:
+            context_summary += f"Customer name: {plan_context.customer_name}\n"
+        if plan_context.order_number:
+            context_summary += f"Order number: {plan_context.order_number}\n"
         if plan_context.current_order:
             context_summary += f"Current order: {plan_context.current_order.order_number}\n"
         if plan_context.found_products:
@@ -182,23 +157,27 @@ A) CONVERSATIONAL REQUESTS (respond conversationally, no tools needed):
 B) INFORMATION REQUESTS (use tools to get specific data):
    - Order questions: "my order", "order status", "track order" + email/order# → get_order_status
    - Product search: "show me", "what products", "looking for [product]" → browse_catalog
-   - Product details: "tell me about [specific product]" → browse_catalog (then get_product_info if found)
+   - Product details: "tell me about [specific product]" → get_product_info
+   - Product details from order: "tell me about the products i ordered", "what did i buy" (when order context available) → get_product_info (if multiple products in order, return "get_product_info" for EACH SKU as comma-separated)
    - Recommendations: "recommend", "suggest products" → get_recommendations
    - Promotions: "discount", "promotion", "deal", "early risers", "tell me about early risers" → get_early_risers_promotion
    - Company info: "about company", "contact" → get_company_info
-   - Order history: "my previous orders", "what have I bought" → get_order_history
 
 C) MULTI-STEP REQUESTS (use multiple tools in sequence):
    - "check my order and give recommendations" → get_order_status,get_recommendations
+   - "tell me about the products I ordered and recommend similar items" → get_product_info,get_recommendations
+   - "tell me about my ordered products" (when multiple products in order) → get_product_info (for each SKU)
    - "show me products and tell me about deals" → browse_catalog,get_early_risers_promotion
 
 STEP 2 - CHECK FOR MISSING INFORMATION:
    - For get_order_status: need email AND order_number
-   - For get_order_history: need email
+     * If we have BOTH email and order_number in available context → use get_order_status
+     * If missing either email or order_number → return "wait_for_missing_info"
    - For get_product_info: need product_identifier (SKU or name)
+     * If asking about ordered products and order has multiple SKUs, plan to call get_product_info for each SKU
    - For browse_catalog: can work without parameters or with search terms
    - For get_recommendations: can use order context or customer preferences
-   - If missing required parameters: return "wait_for_missing_info"
+   - IMPORTANT: Check available context first before assuming missing information
 
 STEP 3 - DETERMINE RESPONSE:
    - Conversational requests: return "conversational_response"
@@ -215,11 +194,13 @@ EXAMPLES:
 - "show me backpacks" → "browse_catalog"
 - "my order george.hill@example.com #W009" → "get_order_status"
 - "tell me about my order" (no email/order#) → "wait_for_missing_info"
+- "#W006" (context has email: dana@example.com) → "get_order_status"
+- "W006" (context has email: dana@example.com) → "get_order_status" 
+- "dana@example.com" (context has order#: #W006) → "get_order_status"
 - "what do you recommend?" → "get_recommendations"
-- "what have I bought before?" → "get_order_history"
 - "I want" (incomplete) → "conversational_response"
 
-Respond with JSON containing the action to take."""
+Determine the appropriate action to take."""
         
         user_message = f'Customer Request: "{user_input}"'
         
@@ -239,7 +220,7 @@ Respond with JSON containing the action to take."""
             system_prompt=system_prompt,
             user_message=user_message,
             expected_json_schema=json_schema,
-            use_structured_output=True,
+            use_structured_output=True,  # Use API structured output properly
             temperature=0.1
         )
 
@@ -264,7 +245,7 @@ Respond with JSON containing:
 - "missing_request": specific question to ask user or null if none needed
 
 Examples:
-- User: "tell me about my order", Tool: "get_contact_info" → {{"addressed": false, "reason": "user wanted order info but got contact info", "missing_request": "I need your order number to look up your order."}}
+- User: "tell me about my order", Tool: "get_company_info" → {{"addressed": false, "reason": "user wanted order info but got company info", "missing_request": "I need your order number to look up your order."}}
 - User: "george@email.com", Tool: "get_company_info" → {{"addressed": false, "reason": "user provided email for order lookup but got company info", "missing_request": "Great! I have your email. Now I need your order number."}}
 - User: "#W006", Tool: "get_order_status" → {{"addressed": true, "reason": "order number provided and order lookup performed", "missing_request": null}}"""
         
@@ -294,6 +275,6 @@ Examples:
             system_prompt=system_prompt,
             user_message=user_message,
             expected_json_schema=json_schema,
-            use_structured_output=True,
+            use_structured_output=True,  # Use API structured output properly
             temperature=0.1
         )
