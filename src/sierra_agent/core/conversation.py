@@ -103,7 +103,6 @@ class Conversation:
         self.quality_score: Optional[float] = None
         self.start_time = datetime.now()
         self.last_activity = datetime.now()
-        self.context_storage: Dict[str, Any] = {}
 
         logger.info("New conversation initialized")
 
@@ -224,27 +223,3 @@ class Conversation:
 
         logger.info("Conversation cleared and reset")
 
-    def get_available_data(self) -> Dict[str, Any]:
-        """Get all data available from previous tool results and context storage."""
-
-        available = {}
-
-        # First check context storage if it exists
-        if hasattr(self, "context_storage") and self.context_storage:
-            available.update(self.context_storage)
-
-        # Get recent tool results from messages (for backwards compatibility)
-        for message in reversed(self.messages):
-            if message.tool_results:
-                for tool_result in message.tool_results:
-                    if tool_result.success and tool_result.data:
-                        data_type = type(tool_result.data).__name__
-                        if data_type == "Order" and "current_order" not in available:
-                            available["current_order"] = tool_result.data
-
-                        elif data_type == "list" and tool_result.data and "recent_products" not in available:
-                            # Check if it's products
-                            if isinstance(tool_result.data, list) and tool_result.data and hasattr(tool_result.data[0], "product_name"):
-                                available["recent_products"] = tool_result.data
-
-        return available

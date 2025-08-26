@@ -16,6 +16,8 @@ from sierra_agent.data.data_types import (
     Promotion,
     ToolResult,
 )
+from sierra_agent.ai.prompt_templates import PromptTemplates
+from sierra_agent.ai.prompt_types import Prompt
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +27,7 @@ class ContextType(Enum):
     PLANNING = "planning"  # Tool selection and planning
     PLAN_UPDATE = "plan_update"  # Dynamic plan modification
 
-@dataclass
-class MinimalHistoryItem:
-    """Minimal conversation history item with preserved identifiers."""
-    user_question: str
-    tool_result_summary: str
-    identifiers: Dict[str, str]  # key-value pairs of important identifiers
-    interaction_type: str  # order_lookup, product_search, etc.
+# Removed: MinimalHistoryItem - replaced by ConversationContext.interaction_summaries
 
 @dataclass
 class BaseContext:
@@ -49,8 +45,8 @@ class CustomerServiceContext(BaseContext):
     tool_results: List[ToolResult] = field(default_factory=list)
     primary_result: Optional[ToolResult] = None
 
-    # Conversation context
-    conversation_context: Any = None  # The actual conversation context object
+    # Plan context
+    plan_context: Any = None  # The plan context object
 
 @dataclass
 class PlanningContext(BaseContext):
@@ -69,7 +65,7 @@ class PlanningContext(BaseContext):
     max_steps: int = 5
 
     # Minimal history for context-aware planning
-    recent_history: List[MinimalHistoryItem] = field(default_factory=list)
+    # Removed: recent_history replaced by ConversationContext.interaction_summaries
 
 @dataclass
 class PlanUpdateContext(BaseContext):
@@ -94,7 +90,7 @@ class ContextBuilder:
         self,
         user_input: str,
         tool_results: Optional[List[ToolResult]] = None,
-        conversation_context=None
+        plan_context=None
     ) -> CustomerServiceContext:
         """Build strongly-typed context for customer service responses."""
 
@@ -107,7 +103,7 @@ class ContextBuilder:
             user_input=user_input,
             tool_results=tool_results,
             primary_result=primary_result,
-            conversation_context=conversation_context
+            plan_context=plan_context
         )
 
 
@@ -123,61 +119,22 @@ class ContextBuilder:
     ) -> PlanningContext:
         """Build strongly-typed context for planning."""
 
-        # Extract minimal history for context-aware planning
-        recent_history = self._extract_minimal_history(conversation_context, limit=2)
-
+        # Use the new ConversationContext system - no more minimal history extraction needed
         return PlanningContext(
             user_input=user_input,
             available_data=available_data or {},
             available_tools=available_tools or [],
             conversation_phase=conversation_phase,
             current_topic=current_topic,
-            max_steps=max_steps,
-            recent_history=recent_history
+            max_steps=max_steps
+            # Removed: recent_history - now handled by ConversationContext.interaction_summaries
         )
 
 
     # Removed build_plan_update_context - no longer needed with EvolvingPlan system
 
 
-    def _extract_minimal_history(self, conversation_context, limit: int = 2) -> List[MinimalHistoryItem]:
-        """Extract minimal conversation history with preserved identifiers."""
-        if not conversation_context:
-            return []
-
-        try:
-            # Get recent messages with tool results
-            recent_messages = conversation_context.get_recent_messages_with_tool_results(limit=limit)
-
-            history_items = []
-            for message in recent_messages:
-                if message.tool_results:
-                    # Extract the user question that led to this result
-                    user_messages = conversation_context.get_user_messages()
-                    user_question = "Previous request"
-                    if user_messages:
-                        # Get the user message that came before this AI response
-                        user_question = user_messages[-1].content if user_messages else "Previous request"
-
-                    # Process each tool result in the message
-                    for tool_result in message.tool_results:
-                        if tool_result.success and tool_result.data:
-                            summary, identifiers, interaction_type = self._summarize_tool_result_with_identifiers(tool_result)
-
-                            history_item = MinimalHistoryItem(
-                                user_question=user_question[:50] + "..." if len(user_question) > 50 else user_question,
-                                tool_result_summary=summary,
-                                identifiers=identifiers,
-                                interaction_type=interaction_type
-                            )
-
-                            history_items.append(history_item)
-
-            return history_items[-limit:] if len(history_items) > limit else history_items
-
-        except Exception:
-
-            return []
+    # Removed: _extract_minimal_history - replaced by ConversationContext.interaction_summaries
 
     def _summarize_tool_result_with_identifiers(self, tool_result: ToolResult) -> tuple[str, Dict[str, str], str]:
         """Summarize tool result preserving all identifiers."""
@@ -296,8 +253,8 @@ class LLMPromptBuilder:
         # Format business data using existing serialization
         business_data = self._format_business_data(context.tool_results, context.primary_result)
 
-        # Format conversation summary
-        history_context = self._format_conversation_summary(context.conversation_context)
+        # Format conversation summary 
+        history_context = self._format_conversation_summary(context.plan_context)
 
         # Construct prompt with clear structure and outdoor personality
         return f"""You are a friendly customer service agent for Sierra Outfitters, a premium outdoor gear retailer. 
@@ -309,13 +266,15 @@ BRAND PERSONALITY:
 - Use phrases like "Onward into the unknown!" when appropriate
 - Be helpful with an outdoorsy, adventurous spirit
 
-{history_context}Current Customer Request: "{context.user_input}"
+{history_context}
+
+Current Customer Request: "{context.user_input}"
 
 Current Business Data:
 {business_data}
 
 Instructions:
-- Provide a helpful, accurate response using ONLY the business data above
+- Provide a helpful, accurate response to the customer's request using ONLY the business data and context above
 - Reference specific identifiers (order numbers, SKUs, names) exactly as provided
 - Be specific and include relevant details from the data
 - If referencing previous interactions, use the exact identifiers provided
@@ -339,13 +298,12 @@ Instructions:
         # Format available tools
         tools_description = self._format_available_tools(context.available_tools)
 
-        # Format minimal history for planning context
-        history_context = self._format_minimal_history_for_planning(context.recent_history)
+        # History context now handled by ConversationContext.interaction_summaries
 
         return f"""You are a customer service planning assistant for Sierra Outfitters, an outdoor gear company with an adventurous spirit. 🏔️
 Analyze the customer's request and suggest the specific steps needed to fulfill it.
 
-{history_context}Current Customer Request: "{context.user_input}"
+Current Customer Request: "{context.user_input}"
 Conversation Phase: {context.conversation_phase}
 Current Topic: {context.current_topic}
 
@@ -406,30 +364,15 @@ Respond with ONLY a JSON array of tool names for the next steps:
 ["tool1", "tool2"]"""
 
 
-    def _format_minimal_history(self, history_items: List[MinimalHistoryItem]) -> str:
-        """Format minimal history with preserved identifiers."""
-        if not history_items:
-            return ""
+    # Removed: _format_minimal_history - replaced by ConversationContext.get_prompt_context()
 
-        formatted = ["Recent Context:"]
-        for item in history_items:
-            # Format identifiers for easy reference
-            id_parts = []
-            for key, value in item.identifiers.items():
-                if value and value != "none":
-                    id_parts.append(f"{key}: {value}")
-
-            identifier_str = f" ({', '.join(id_parts)})" if id_parts else ""
-            formatted.append(f"- {item.tool_result_summary}{identifier_str}")
-
-        return "\n".join(formatted) + "\n\n"
-
-    def _format_conversation_summary(self, conversation_context) -> str:
+    def _format_conversation_summary(self, plan_context) -> str:
         """Generate a simple formatted conversation summary for the prompt."""
-        if not conversation_context or not hasattr(conversation_context, "get_available_data"):
+        if not plan_context:
             return ""
-
-        available_data = conversation_context.get_available_data()
+        
+        # Use the new ConversationContext unified system
+        available_data = plan_context.to_available_data()
         if not available_data:
             return ""
 
@@ -453,26 +396,6 @@ Respond with ONLY a JSON array of tool names for the next steps:
             return "Recent Context:\n- " + "\n- ".join(summary_parts) + "\n\n"
         return ""
 
-    def _format_minimal_history_for_planning(self, history_items: List[MinimalHistoryItem]) -> str:
-        """Format minimal history for planning context."""
-        if not history_items:
-            return ""
-
-        formatted = ["Previous Interactions (for context):"]
-        for item in history_items:
-            # Include interaction type for planning decisions
-            formatted.append(f"- {item.interaction_type}: {item.tool_result_summary}")
-
-            # Add key identifiers that might influence planning
-            key_identifiers = []
-            for key, value in item.identifiers.items():
-                if key in ["order_number", "customer_email", "product_skus", "sku"] and value and value != "none":
-                    key_identifiers.append(f"{key}: {value}")
-
-            if key_identifiers:
-                formatted.append(f"  Available: {', '.join(key_identifiers)}")
-
-        return "\n".join(formatted) + "\n\n"
 
     def _format_business_data(self, tool_results: List[ToolResult], primary_result: Optional[ToolResult]) -> str:
         """Format business data using existing ToolResult serialization."""
@@ -555,3 +478,28 @@ Respond with ONLY a JSON array of tool names for the next steps:
                 formatted.append(f"Step {i}: FAILED - Tool failed: {result.error}")
 
         return "\n".join(formatted)
+    
+    # Consolidated prompt methods - delegate to PromptTemplates
+    def build_plan_continuation_prompt(self, plan_context, user_input: str, existing_request: str) -> Prompt:
+        """Replace adaptive_planning_service.py:61-90 inline prompt"""
+        return PromptTemplates.build_plan_continuation_prompt(plan_context, user_input, existing_request)
+    
+    def build_missing_info_prompt(self, plan_context, user_input: str) -> Prompt:
+        """Replace adaptive_planning_service.py:166-195 inline prompt"""
+        return PromptTemplates.build_missing_info_prompt(plan_context, user_input)
+    
+    def build_no_data_response_prompt(self, plan_context, user_input: str, response_type: str = "general") -> Prompt:
+        """Replace adaptive_planning_service.py:235-270 inline prompt"""
+        return PromptTemplates.build_no_data_response_prompt(plan_context, user_input, response_type)
+    
+    def build_tool_result_response_prompt(self, plan_context, user_input: str, result_data: str) -> Prompt:
+        """Replace adaptive_planning_service.py:287-320 inline prompt"""
+        return PromptTemplates.build_tool_result_response_prompt(plan_context, user_input, result_data)
+    
+    def build_vague_request_analysis_prompt(self, plan_context, user_input: str, available_tools: List[str], tools_description: str = None):
+        """Replace llm_service.py:122-180 inline prompt"""
+        return PromptTemplates.build_vague_request_analysis_prompt(plan_context, user_input, available_tools, tools_description)
+    
+    def build_tool_validation_prompt(self, user_request: str, tool_executed: str, tool_result_summary: str, plan_context) -> Prompt:
+        """Replace llm_service.py:234-255 inline prompt"""
+        return PromptTemplates.build_tool_validation_prompt(user_request, tool_executed, tool_result_summary, plan_context)

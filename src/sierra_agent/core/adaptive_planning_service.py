@@ -3,12 +3,14 @@
 Clean, strongly typed planning service that manages evolving conversation plans.
 """
 
+import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sierra_agent.ai.llm_service import LLMService
-from sierra_agent.core.planning_types import EvolvingPlan, ExecutedStep
+from sierra_agent.ai.prompt_templates import PromptTemplates
+from sierra_agent.core.planning_types import EvolvingPlan, ExecutedStep, ConversationContext
 from sierra_agent.data.data_types import Order, Product, ToolResult
 from sierra_agent.tools.tool_orchestrator import ToolOrchestrator
 
@@ -58,34 +60,23 @@ class AdaptivePlanningService:
             if existing_plan.executed_steps:
                 plan_context += f", Tools used: {[step.tool_name for step in existing_plan.executed_steps]}"
             
-            prompt = f"""Determine if the new user input is related to the existing conversation plan or represents a completely different topic.
+            prompt = PromptTemplates.build_plan_continuation_prompt(
+                plan_context=existing_plan.context,
+                user_input=user_input,
+                existing_request=existing_plan.original_request
+            )
 
-Current Plan Context: {plan_context}
-New User Input: "{user_input}"
-
-Instructions:
-1. Consider if the new input is:
-   - A follow-up question about the same topic
-   - Providing missing information (email, order number, clarification)
-   - A refinement or continuation of the current request
-   
-2. OR if it's a completely different topic that should start fresh:
-   - Asking about orders when current plan is about promotions
-   - Asking about products when current plan is about orders
-   - Any major topic shift that's unrelated
-
-Examples:
-- Plan: "tell me about early risers", New: "the discount" → RELATED (clarification)
-- Plan: "tell me about early risers", New: "am i eligible" → RELATED (follow-up)
-- Plan: "tell me about early risers", New: "george.hill@example.com" → RELATED (providing info)
-- Plan: "tell me about early risers", New: "tell me about my order" → NOT_RELATED (topic change)
-- Plan: "my order status", New: "#W009" → RELATED (providing missing order number)
-
-Return only: "RELATED" or "NOT_RELATED" """
-
-            response = self.llm_service.low_latency_client.call_llm(prompt, temperature=0.1)
-            response_clean = response.strip().upper()
-            return response_clean == "RELATED"
+            response = self.llm_service.low_latency_client.call_llm(prompt)
+            
+            # Parse JSON response
+            try:
+                parsed_response = json.loads(response.strip())
+                decision = parsed_response.get("decision", "")
+                return decision == "CONTINUE"
+            except json.JSONDecodeError:
+                # Fallback for backwards compatibility
+                response_clean = response.strip().upper()
+                return response_clean == "CONTINUE"
             
         except Exception as e:
             logger.exception(f"Error checking input relatedness: {e}")
@@ -163,26 +154,14 @@ Return only: "RELATED" or "NOT_RELATED" """
             context_summary = " | ".join(context_info) if context_info else "No context available"
             missing_summary = ", ".join(missing_items) if missing_items else "additional information"
             
-            prompt = f"""Generate a direct, specific request for missing information needed to help the customer.
-
-Action Needed: {action}
-Available Context: {context_summary}
-Missing Information: {missing_summary}
-
-Instructions:
-1. Be direct and specific about exactly what you need
-2. Don't ask for "related items" - ask for the specific missing parameters
-3. Keep it concise and friendly
-4. Make it clear what the customer should provide next
-
-Examples:
-- "I need your order number to look up your order."
-- "I need your email address to find your order."
-- "What products are you looking for?"
-
-Response: Just the direct request (e.g., "I need your order number.")"""
+            # Construct a temporary user input for the prompt template
+            temp_input = f"Action needed: {action}, Missing: {missing_summary}"
+            prompt = PromptTemplates.build_missing_info_prompt(
+                plan_context=plan.context,
+                user_input=temp_input
+            )
             
-            response = self.llm_service.low_latency_client.call_llm(prompt, temperature=0.1)
+            response = self.llm_service.low_latency_client.call_llm(prompt)
             return response.strip().strip('"').strip("'")
             
         except Exception as e:
@@ -204,6 +183,7 @@ Response: Just the direct request (e.g., "I need your order number.")"""
                 response = self.llm_service.generate_customer_service_response(
                     user_input=user_input,
                     tool_results=[tool_result],
+                    plan_context=None,  # Pass None or create minimal context
                     use_thinking_model=False  # Use fast model for response generation
                 )
                 return response
@@ -232,32 +212,13 @@ Response: Just the direct request (e.g., "I need your order number.")"""
             elif any(help_word in user_lower for help_word in ["help", "assist", "support"]):
                 response_type = "help_request"
             
-            prompt = f"""Generate a friendly customer service response for Sierra Outfitters, an outdoor gear company. Use enthusiastic outdoor/adventure branding and tone.
-
-Customer said: "{user_input}"
-Response Type: {response_type}
-
-Instructions:
-1. Match the response to what the customer said ({response_type})
-2. Use outdoor/adventure themes and enthusiasm  
-3. Include Sierra Outfitters branding elements like:
-   - Mountain emoji 🏔️
-   - Adventure/outdoor language ("adventure", "trail", "summit", etc.)
-   - Enthusiastic tone with exclamation points
-   - References to the unknown, exploration, outdoor spirit
-4. For greetings: Welcome them warmly and ask how you can help with their adventure
-5. For thanks: Acknowledge appreciatively and offer continued support  
-6. For help requests: Express excitement to help and ask what they need specifically
-7. Keep it concise but branded (2-3 sentences)
-
-Examples:
-- Greeting: "Hello there, fellow adventurer! 🏔️ Welcome to Sierra Outfitters! I'm excited to help you gear up for your next outdoor expedition. What adventure can I help you prepare for today?"
-- Thanks: "You're absolutely welcome! 🏔️ It's my pleasure to help fellow outdoor enthusiasts. May your trails be scenic and your adventures unforgettable!"
-- Help: "I'm thrilled to help you with your outdoor adventures! 🏔️ Whether you're looking for gear recommendations, checking on orders, or exploring our latest promotions, I'm here to guide you. What can I assist you with today?"
-
-Response:"""
+            prompt = PromptTemplates.build_no_data_response_prompt(
+                plan_context=plan.context,
+                user_input=user_input,
+                response_type=response_type
+            )
             
-            response = self.llm_service.low_latency_client.call_llm(prompt, temperature=0.3)
+            response = self.llm_service.low_latency_client.call_llm(prompt)
             return response.strip().strip('"').strip("'")
             
         except Exception as e:
@@ -284,21 +245,16 @@ Response:"""
                 else:
                     data_summary = "Retrieved data"
             
-            prompt = f"""Generate a friendly customer service response based on the tool execution.
-
-User Request: "{user_input}"
-Tool Executed: {tool_name}
-Result: {data_summary}
-
-Instructions:
-1. Acknowledge what was found/done
-2. Be helpful and customer-focused
-3. Keep it concise but informative
-4. Don't make up specific details not provided
-
-Response: Just the customer service message"""
+            # Create minimal context for template
+            minimal_context = ConversationContext()
             
-            response = self.llm_service.low_latency_client.call_llm(prompt, temperature=0.3)
+            prompt = PromptTemplates.build_tool_result_response_prompt(
+                plan_context=minimal_context,
+                user_input=user_input,
+                result_data=data_summary
+            )
+            
+            response = self.llm_service.low_latency_client.call_llm(prompt)
             return response.strip().strip('"').strip("'")
             
         except Exception as e:
@@ -326,39 +282,15 @@ Response: Just the customer service message"""
             return [action] if action else []
         
         try:
-            # Prepare available data from plan context
-            available_data: Dict[str, Any] = {}
-            if plan.context.current_order:
-                available_data["current_order"] = plan.context.current_order
-            if plan.context.found_products:
-                available_data["found_products"] = plan.context.found_products
-            if plan.context.customer_email:
-                available_data["customer_email"] = plan.context.customer_email
-            if plan.context.order_number:
-                available_data["order_number"] = plan.context.order_number
-            
-            # Determine conversation phase based on executed steps
-            conversation_phase = "greeting" if not plan.executed_steps else "exploration"
-            if len(plan.executed_steps) > 3:
-                conversation_phase = "resolution"
-            
-            # Determine current topic from context
-            current_topic = "general"
-            if plan.context.current_order:
-                current_topic = "order_management"
-            elif plan.context.found_products:
-                current_topic = "product_inquiry"
-            
             # Get available tools dynamically from tool orchestrator
             available_tools = tool_orchestrator.get_available_tools()
             
             # Use specialized LLM analysis for vague requests and contextual suggestions
             suggested_actions = self.llm_service.analyze_vague_request_and_suggest(
                 user_input=user_input,
-                available_data=available_data,
-                conversation_context=f"Phase: {conversation_phase}, Topic: {current_topic}, Executed: {[step.tool_name for step in plan.executed_steps]}",
+                plan_context=plan.context,
                 available_tools=available_tools,
-                tool_orchestrator=tool_orchestrator  # Pass the tool orchestrator for dynamic tool discovery
+                tool_orchestrator=tool_orchestrator
             )
             
             # Return all suggested actions for multistep execution
@@ -471,7 +403,9 @@ INSTRUCTIONS:
 RESPONSE (tool names only):"""
 
             # Use thinking model for better analysis
-            response = self.llm_service.thinking_client.call_llm(prompt, temperature=0.1)
+            from sierra_agent.ai.prompt_types import Prompt
+            prompt_obj = Prompt(system_prompt=prompt, user_message="", temperature=0.1)
+            response = self.llm_service.thinking_client.call_llm(prompt_obj)
             
             # Parse response
             response = response.strip().lower()
@@ -520,7 +454,7 @@ RESPONSE (tool names only):"""
                 user_request=user_input,
                 tool_executed=executed_step.tool_name,
                 tool_result_summary=tool_result_summary,
-                conversation_context=f"Original request: {plan.original_request}"
+                plan_context=plan.context
             )
             
             # Be more lenient - if we have successful tool results, trust that the right tool was selected
@@ -567,6 +501,7 @@ RESPONSE (tool names only):"""
                 response = self.llm_service.generate_customer_service_response(
                     user_input=user_input,
                     tool_results=combined_tool_results,
+                    plan_context=plan.context,
                     use_thinking_model=False
                 )
                 return plan, response

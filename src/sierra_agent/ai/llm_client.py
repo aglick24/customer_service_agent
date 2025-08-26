@@ -11,6 +11,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from .prompt_types import Prompt
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class LLMClient:
 
         logger.info(f"LLMClient initialized with model {model_name}")
 
-    def call_llm(self, prompt: str, temperature: float = 0.7) -> str:
+    def call_llm(self, prompt: Prompt) -> str:
         """Make a direct API call to OpenAI - pure interface."""
         if not self.api_key:
             msg = "OpenAI API key is required"
@@ -47,13 +48,29 @@ class LLMClient:
             msg = "OpenAI client not initialized"
             raise ValueError(msg)
 
+        messages = prompt.to_messages()
+        temp = prompt.temperature
+
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=self.max_tokens,
-                temperature=temperature,
-            )
+            # Build request parameters
+            request_params = {
+                "model": self.model_name,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                "temperature": temp,
+            }
+            
+            # Add structured output if requested and schema is provided
+            if prompt.use_structured_output and prompt.expected_json_schema:
+                request_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "schema": prompt.expected_json_schema
+                    }
+                }
+
+            response = self.client.chat.completions.create(**request_params)
 
             content = response.choices[0].message.content
             if not content:

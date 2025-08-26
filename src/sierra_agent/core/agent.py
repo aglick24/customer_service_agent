@@ -129,7 +129,7 @@ class SierraAgent:
 
     def get_llm_status(self) -> Dict[str, Any]:
         """Get the status of unified LLM service."""
-        return self.llm_service.get_service_status()
+        return self.llm_service.get_agent_statistics()
 
     def get_conversation_summary(self) -> Dict[str, Any]:
         """Get a summary of the current conversation."""

@@ -168,3 +168,7 @@ class ToolOrchestrator:
             "tool_schemas_available": len(self.get_all_tool_schemas())
         }
 
+    def get_tool_descriptions(self) -> str:
+        """Get tool descriptions - alias for get_tools_for_llm_planning for backward compatibility."""
+        return self.get_tools_for_llm_planning()
+

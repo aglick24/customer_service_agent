@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from sierra_agent.data.data_types import BusinessData, ToolResult, Order, Product
 from sierra_agent.tools.tool_orchestrator import ToolOrchestrator
@@ -34,13 +34,18 @@ class ExecutedStep:
 
 @dataclass
 class ConversationContext:
-    """Accumulated business data across conversation turns."""
+    """Unified context system - replaces all other context approaches."""
+    # Core business data
     customer_email: Optional[str] = None
     order_number: Optional[str] = None
     current_order: Optional[Order] = None
     found_products: List[Product] = field(default_factory=list)
     search_query: Optional[str] = None
     customer_preferences: List[str] = field(default_factory=list)
+    
+    # Consolidated context storage
+    interaction_summaries: List[str] = field(default_factory=list)  # Replaces MinimalHistoryItem
+    metadata: Dict[str, Union[str, int, float, bool, List[str]]] = field(default_factory=dict)  # Replaces context_storage
     
     def update_from_result(self, result: ToolResult) -> None:
         """Update context with new tool result data."""
@@ -107,6 +112,47 @@ class ConversationContext:
             # Always return with # prefix to match data format
             return f"#{match.group(1)}"
         return None
+    
+    # Unified context methods - replace all scattered context systems
+    def to_available_data(self) -> Dict[str, Union[Order, List[Product], str, int, float, bool, List[str]]]:
+        """Replace Conversation.get_available_data() calls"""
+        available: Dict[str, Union[Order, List[Product], str, int, float, bool, List[str]]] = {}
+        if self.current_order:
+            available["current_order"] = self.current_order
+        if self.found_products:
+            available["recent_products"] = self.found_products
+        if self.customer_email:
+            available["customer_email"] = self.customer_email
+        if self.order_number:
+            available["order_number"] = self.order_number
+        available.update(self.metadata)  # Include generic metadata
+        return available
+    
+    def add_interaction_summary(self, summary: str) -> None:
+        """Replace MinimalHistoryItem.append() calls"""
+        self.interaction_summaries.append(summary)
+        if len(self.interaction_summaries) > 5:  # Keep last 5
+            self.interaction_summaries = self.interaction_summaries[-5:]
+    
+    def get_prompt_context(self) -> str:
+        """Replace all history formatting methods"""
+        if not self.interaction_summaries:
+            return ""
+        return "Recent Context:\n" + "\n".join(f"- {summary}" for summary in self.interaction_summaries) + "\n\n"
+    
+    def get_conversation_context_string(self, phase: str, topic: str, executed_steps: List) -> str:
+        """Replace manual context string building in adaptive_planning_service"""
+        context_parts = []
+        context_parts.append(f"Phase: {phase}")
+        context_parts.append(f"Topic: {topic}")
+        if executed_steps:
+            step_names = [step.tool_name if hasattr(step, 'tool_name') else str(step) for step in executed_steps]
+            context_parts.append(f"Executed: {step_names}")
+        return ", ".join(context_parts)
+    
+    def get_tool_validation_context(self, original_request: str) -> str:
+        """Replace manual context strings for validation"""
+        return f"Original request: {original_request}"
 
 
 @dataclass
