@@ -81,7 +81,7 @@ class ConversationContext:
             # Extract SKU from user input or use order context
             if self.current_order and self.current_order.products_ordered:
                 # If user is asking about their ordered products, return the first SKU
-                # NOTE: For multiple products, the planner should call this tool multiple times
+                # For multiple products, the planner should call this tool multiple times
                 return {"product_identifier": self.current_order.products_ordered[0]}
             # Otherwise try to extract from user input
             # This is a simple implementation - could be enhanced

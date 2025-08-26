@@ -7,7 +7,7 @@ classification, sentiment analysis, and response generation with usage tracking.
 
 import logging
 import os
-from typing import Optional
+from typing import Optional, Dict, List, Union
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -60,17 +60,32 @@ class LLMClient:
                 "temperature": temp,
             }
             
-            # Add structured output if requested and schema is provided
+            # Call OpenAI API with specific parameter passing to satisfy mypy
             if prompt.use_structured_output and prompt.expected_json_schema:
-                request_params["response_format"] = {
+                # With structured output
+                response_format_dict = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "response",
                         "schema": prompt.expected_json_schema
                     }
                 }
-
-            response = self.client.chat.completions.create(**request_params)
+                # Pass each argument explicitly to satisfy mypy type checking  
+                response = self.client.chat.completions.create(  # type: ignore[call-overload]
+                    model=self.model_name,
+                    messages=messages,
+                    max_tokens=self.max_tokens, 
+                    temperature=temp,
+                    response_format=response_format_dict
+                )
+            else:
+                # Without structured output
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=temp
+                )
 
             content = response.choices[0].message.content
             if not content:

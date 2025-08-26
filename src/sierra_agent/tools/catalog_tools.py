@@ -440,10 +440,10 @@ class ProductDetailsTool(BaseTool):
             if include_recs and products_info:
                 first_product = products_info[0]["product"]
                 related_products: List[Any] = []
-                for tag in first_product.tags[:2]:  # Use first 2 tags
+                for tag in getattr(first_product, 'tags', [])[:2]:  # Use first 2 tags
                     tag_products = self.data_provider.get_products_by_category(tag)
                     for tag_product in tag_products[:2]:
-                        if tag_product not in related_products and all(tag_product.sku != p["product"].sku for p in products_info):
+                        if tag_product not in related_products and all(getattr(tag_product, 'sku', '') != getattr(p["product"], 'sku', '') for p in products_info):
                             related_products.append(tag_product)
                 
                 # Add recommendations to the result
@@ -498,14 +498,14 @@ class ProductDetailsTool(BaseTool):
             # Add recommendations if requested
             if include_recs and product.inventory > 0:
                 # Get 2-3 related products
-                related_products: List[Any] = []
-                for tag in product.tags[:2]:  # Use first 2 tags
+                recommendations: List[Any] = []
+                for tag in getattr(product, 'tags', [])[:2]:  # Use first 2 tags
                     tag_products = self.data_provider.get_products_by_category(tag)
                     for related in tag_products:
-                        if related.sku != product.sku and len(related_products) < 3:
-                            related_products.append(related)
+                        if getattr(related, 'sku', '') != getattr(product, 'sku', '') and len(recommendations) < 3:
+                            recommendations.append(related)
                 
-                product_info["related_products"] = related_products
+                product_info["related_products"] = recommendations
             
             return ToolResult(
                 success=True,

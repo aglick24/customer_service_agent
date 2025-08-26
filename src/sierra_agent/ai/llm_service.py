@@ -7,7 +7,7 @@ replacing the scattered LLM calls throughout the codebase with a clean service l
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from .context_builder import (
     ContextBuilder,
@@ -100,12 +100,26 @@ Thank you for your patience!
             response = self.low_latency_client.call_llm(prompt)
             
             try:
-                # With structured output, response should already be parsed JSON
-                if isinstance(response, dict):
-                    suggestions = response
+                # Handle response which can be str, dict, or other types
+                suggestions: Dict[str, Any] = {}
+                
+                # Parse response based on its actual type
+                parsed_response: Union[str, Dict[str, Any]] = response
+                
+                if isinstance(parsed_response, dict):
+                    # Response is already a dictionary from structured output
+                    suggestions = parsed_response
                 else:
-                    # Fallback to JSON parsing if needed
-                    suggestions = json.loads(response.strip())
+                    # Convert to string and parse as JSON
+                    response_str = str(parsed_response) if parsed_response is not None else "{}"
+                    if response_str.strip():
+                        try:
+                            suggestions = json.loads(response_str.strip())
+                        except json.JSONDecodeError:
+                            # If JSON parsing fails, create a simple response
+                            suggestions = {"action": response_str}
+                    else:
+                        suggestions = {}
                 
                 # Extract action from structured response
                 if isinstance(suggestions, dict) and "action" in suggestions:
